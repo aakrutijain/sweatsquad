@@ -116,7 +116,7 @@ const css={
   barFill:(p,c="#8b7cf8")=>({height:"100%",borderRadius:999,width:p+"%",background:`linear-gradient(90deg,${c},${c}99)`,transition:"width .6s"}),
   avatar: (c,s=36)=>({width:s,height:s,borderRadius:"50%",background:c+"33",color:c,border:`2px solid ${c}55`,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:Math.max(9,s*.35),flexShrink:0}),
   overlay:{position:"fixed",inset:0,background:"rgba(0,0,0,.75)",zIndex:200,display:"flex",alignItems:"flex-end",justifyContent:"center",paddingBottom:56},
-  sheet:  {background:"#13131f",borderRadius:"18px 18px 0 0",border:"1px solid #2a2a42",padding:22,paddingBottom:80,width:"100%",maxWidth:480,maxHeight:"90vh",overflowY:"auto"},
+  sheet:  {background:"#13131f",borderRadius:"18px 18px 0 0",border:"1px solid #2a2a42",padding:22,paddingBottom:80,width:"100%",maxWidth:480,maxHeight:"85vh",overflowY:"auto",overflowX:"hidden"},
   toggle: on=>({width:44,height:24,borderRadius:999,cursor:"pointer",border:"none",background:on?"#43d9ad":"#2a2a42",position:"relative",transition:"background .2s",flexShrink:0}),
 };
 
