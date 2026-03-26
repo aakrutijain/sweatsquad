@@ -7,7 +7,6 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 const ADMIN_EMAIL = "aakrutijain08@gmail.com";
-
 const firebaseConfig = {
   apiKey: "AIzaSyDHR2rYRY9aWssll1FTwZ5SvNdd8Zp6kUM",
   authDomain: "sweatsquad-3190c.firebaseapp.com",
@@ -36,9 +35,10 @@ const DEFAULT_DIET_RULES = [
   {id:"veggies",  label:"Ate fruits / vegetables",    icon:"🥦",points:1},
   {id:"nosugar",  label:"No sugary drinks",           icon:"🧃",points:1},
 ];
-const DIET_STREAK_BONUSES  = {3:2,7:5,14:10,21:15,30:25};
-const WEEKLY_CHEAT_TOKENS  = 2;
+const DIET_STREAK_BONUSES    = {3:2,7:5,14:10,21:15,30:25};
 const FITNESS_STREAK_BONUSES = {5:3,7:5,10:8,14:12,20:18,25:22,30:30};
+const WEEKLY_CHEAT_TOKENS    = 2;
+const WEEKLY_FITNESS_PASSES  = 2;
 
 const FITNESS_BADGES = [
   {id:"streak_5",  icon:"🔥",name:"On Fire",         check:s=>s.streak>=5,  progress:s=>({cur:Math.min(s.streak,5), max:5})},
@@ -68,13 +68,16 @@ const totalDays   = c=> daysBetween(c.startDate,c.endDate)+1;
 const pct         = (v,t)=> t?Math.min(100,Math.round(v/t*100)):0;
 const isUpcoming  = c=> c.startDate > TODAY;
 const isActive    = c=> c.startDate <= TODAY && c.endDate >= TODAY;
+const getWeekStart= ()=>{ const d=new Date(); d.setDate(d.getDate()-d.getDay()); return d.toISOString().slice(0,10); };
 
-function calcFitnessPoints(rules,form,currentStreak){
+function calcFitnessPoints(rules,form,currentStreak,usePass=false){
+  if(usePass) return 0; // pass days earn no points but don't break streak
   if(!form.completed) return 0;
   let pts=0;
   (rules||[]).forEach(r=>{
     if(r.condition==="completed")         pts+=+r.points;
     if(r.condition==="duration_gt_45"  && +form.duration>45)   pts+=+r.points;
+    if(r.condition==="steps_gte_5000"  && +form.steps>=5000)   pts+=+r.points;
     if(r.condition==="steps_gte_10000" && +form.steps>=10000)  pts+=+r.points;
     if(r.condition==="steps_gte_15000" && +form.steps>=15000)  pts+=+r.points;
     if(r.condition==="distance_gt_3"   && +form.distance>3)    pts+=+r.points;
@@ -86,7 +89,6 @@ function calcFitnessPoints(rules,form,currentStreak){
 }
 function calcDietScore(rules,checks){ return (rules||DEFAULT_DIET_RULES).reduce((s,r)=>s+(checks[r.id]?r.points:0),0); }
 function maxDietScore(rules){ return (rules||DEFAULT_DIET_RULES).reduce((s,r)=>s+r.points,0); }
-function getWeekStart(){ const d=new Date(); d.setDate(d.getDate()-d.getDay()); return d.toISOString().slice(0,10); }
 
 const css={
   app:    {minHeight:"100vh",background:"#0d0d14",color:"#e8e8f0",fontFamily:"system-ui,sans-serif",fontSize:14},
@@ -163,7 +165,7 @@ function LoginScreen(){
           {busy?"Signing in…":"Continue with Google"}
         </button>
         {error&&<div style={{color:"#ff6584",fontSize:12,marginTop:12}}>{error}</div>}
-        <div style={{color:"#333",fontSize:11,marginTop:24}}>Your progress syncs across all devices.</div>
+        <div style={{color:"#333",fontSize:11,marginTop:24}}>Syncs across all your devices.</div>
       </div>
     </div>
   );
@@ -181,7 +183,6 @@ function MiniCalendar({startDate,endDate,checkins,selectedDate,onSelect}){
   function prevMonth(){ if(viewMonth===0){setViewMonth(11);setViewYear(y=>y-1);}else setViewMonth(m=>m-1); }
   function nextMonth(){ if(viewMonth===11){setViewMonth(0);setViewYear(y=>y+1);}else setViewMonth(m=>m+1); }
   const monthName=new Date(viewYear,viewMonth).toLocaleString("default",{month:"long"});
-  const DAYS=["Su","Mo","Tu","We","Th","Fr","Sa"];
   return(
     <div style={{background:"#1a1a2e",borderRadius:12,padding:12,marginBottom:12}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
@@ -190,48 +191,50 @@ function MiniCalendar({startDate,endDate,checkins,selectedDate,onSelect}){
         <button onClick={nextMonth} style={{background:"none",border:"none",color:"#8b7cf8",fontSize:18,cursor:"pointer",padding:"0 6px"}}>›</button>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2,marginBottom:4}}>
-        {DAYS.map(d=><div key={d} style={{textAlign:"center",fontSize:10,color:"#555",fontWeight:600,padding:"2px 0"}}>{d}</div>)}
+        {["Su","Mo","Tu","We","Th","Fr","Sa"].map(d=><div key={d} style={{textAlign:"center",fontSize:10,color:"#555",fontWeight:600,padding:"2px 0"}}>{d}</div>)}
       </div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2}}>
         {Array.from({length:startPad},(_,i)=><div key={"p"+i}/>)}
         {Array.from({length:daysInMonth},(_,i)=>{
-          const dayNum=i+1;
-          const d=new Date(viewYear,viewMonth,dayNum);
+          const d=new Date(viewYear,viewMonth,i+1);
           const dateStr=d.toISOString().slice(0,10);
           const loggable=d>=challStart&&d<=challEnd;
           const logged=!!checkins[dateStr];
+          const usedPass=checkins[dateStr]?.usePass;
           const selected=dateStr===selectedDate;
           let bg="#0d0d14",color="#555",border="1px solid transparent";
           if(selected){bg="#8b7cf8";color="#fff";border="1px solid #8b7cf8";}
+          else if(usedPass&&loggable){bg="#ffb34722";color="#ffb347";border="1px solid #ffb34755";}
           else if(logged&&loggable){bg="#8b7cf822";color="#8b7cf8";border="1px solid #8b7cf855";}
           else if(loggable){bg="#1e1e2e";color="#e8e8f0";border="1px solid #2a2a42";}
           return(
-            <div key={dayNum} onClick={()=>loggable&&onSelect(dateStr)} style={{textAlign:"center",padding:"6px 2px",borderRadius:8,fontSize:12,fontWeight:selected?700:400,background:bg,color,border,cursor:loggable?"pointer":"default",opacity:loggable?1:0.25,position:"relative"}}>
-              {dayNum}
-              {logged&&!selected&&<div style={{position:"absolute",bottom:1,left:"50%",transform:"translateX(-50%)",width:4,height:4,borderRadius:"50%",background:"#43d9ad"}}/>}
+            <div key={i+1} onClick={()=>loggable&&onSelect(dateStr)} style={{textAlign:"center",padding:"6px 2px",borderRadius:8,fontSize:12,fontWeight:selected?700:400,background:bg,color,border,cursor:loggable?"pointer":"default",opacity:loggable?1:0.25,position:"relative"}}>
+              {i+1}
+              {logged&&!selected&&<div style={{position:"absolute",bottom:1,left:"50%",transform:"translateX(-50%)",width:4,height:4,borderRadius:"50%",background:usedPass?"#ffb347":"#43d9ad"}}/>}
             </div>
           );
         })}
       </div>
-      <div style={{display:"flex",gap:12,marginTop:8,fontSize:10,color:"#555"}}>
+      <div style={{display:"flex",gap:10,marginTop:8,fontSize:10,color:"#555",flexWrap:"wrap"}}>
         <span><span style={{color:"#8b7cf8"}}>■</span> Selected</span>
-        <span><span style={{color:"#8b7cf8"}}>□</span> Logged</span>
-        <span style={{color:"#43d9ad"}}>● Completed</span>
+        <span><span style={{color:"#43d9ad"}}>●</span> Done</span>
+        <span><span style={{color:"#ffb347"}}>●</span> Pass used</span>
       </div>
     </div>
   );
 }
 
-function CheckInModal({challenge,myCheckins,currentStreak,onClose,onSubmit}){
+// ── FITNESS CHECK-IN MODAL ────────────────────────────────────────────────────
+function CheckInModal({challenge,myCheckins,currentStreak,fitnessPassesLeft,onClose,onSubmit}){
   const [selDate,setSelDate]=useState(TODAY);
-  const [form,setForm]=useState({completed:true,duration:"30",distance:"",steps:"",note:""});
+  const [form,setForm]=useState({completed:true,duration:"",distance:"",steps:"",note:"",usePass:false});
   const set=(k,v)=>setForm(p=>({...p,[k]:v}));
   const alreadyLogged=!!myCheckins[selDate];
-  const pts=calcFitnessPoints(challenge.rules,form,currentStreak);
+  const pts=calcFitnessPoints(challenge.rules,form,currentStreak,form.usePass);
   const streakBonus=FITNESS_STREAK_BONUSES[currentStreak+1]||0;
   useEffect(()=>{
-    if(myCheckins[selDate]){ const e=myCheckins[selDate]; setForm({completed:e.completed??true,duration:e.duration||"30",distance:e.distance||"",steps:e.steps||"",note:e.note||""}); }
-    else setForm({completed:true,duration:"30",distance:"",steps:"",note:""});
+    if(myCheckins[selDate]){ const e=myCheckins[selDate]; setForm({completed:e.completed??true,duration:e.duration||"",distance:e.distance||"",steps:e.steps||"",note:e.note||"",usePass:e.usePass||false}); }
+    else setForm({completed:true,duration:"",distance:"",steps:"",note:"",usePass:false});
   },[selDate]);
   return(
     <div style={css.overlay} onMouseDown={onClose}>
@@ -250,28 +253,50 @@ function CheckInModal({challenge,myCheckins,currentStreak,onClose,onSubmit}){
             {selDate<TODAY&&!alreadyLogged&&<span style={{...css.chip("#8b7cf8"),marginLeft:8,fontSize:10}}>Past date</span>}
           </div>
         </div>
-        <div style={css.label}>Did you complete the activity?</div>
-        <div style={{display:"flex",gap:8,marginBottom:8}}>
-          <button style={{...css.btn(form.completed?"primary":"secondary"),flex:1}} onClick={()=>set("completed",true)}>✅ Yes!</button>
-          <button style={{...css.btn(!form.completed?"primary":"secondary"),flex:1}} onClick={()=>set("completed",false)}>❌ Missed</button>
-        </div>
-        {form.completed&&<>
-          <div style={css.label}>Duration (min)</div>
-          <input type="number" value={form.duration} onChange={e=>set("duration",e.target.value)} style={css.input}/>
-          {["Running","Cycling"].includes(challenge.type)&&<>
-            <div style={css.label}>Distance (km)</div>
-            <input type="number" value={form.distance} onChange={e=>set("distance",e.target.value)} style={css.input} placeholder="e.g. 5.2"/>
-          </>}
-          <div style={css.label}>Steps <span style={{color:"#555",fontWeight:400}}>{challenge.type!=="Steps"?"(optional)":""}</span></div>
-          <input type="number" value={form.steps} onChange={e=>set("steps",e.target.value)} style={css.input} placeholder={challenge.type==="Steps"?"e.g. 11000":"optional"}/>
-          <div style={css.label}>Note (optional)</div>
-          <input value={form.note} onChange={e=>set("note",e.target.value)} style={css.input} placeholder="How did it feel?"/>
-          <div style={{background:"#1a1630",border:"1px solid #8b7cf8",borderRadius:12,padding:14,textAlign:"center",margin:"14px 0"}}>
-            <div style={{fontSize:11,color:"#888"}}>Points you'll earn</div>
-            <div style={{fontSize:36,fontWeight:900,color:"#8b7cf8"}}>+{pts}</div>
-            {streakBonus>0&&selDate===TODAY&&<div style={{fontSize:12,color:"#ffb347",marginTop:4}}>🔥 Includes +{streakBonus} streak bonus!</div>}
+
+        {/* Out pass */}
+        {fitnessPassesLeft>0&&(
+          <div style={{...css.card,padding:12,marginBottom:10}}>
+            <div style={{display:"flex",alignItems:"center",gap:10}}>
+              <span style={{fontSize:20}}>🎫</span>
+              <div style={{flex:1}}>
+                <div style={{fontWeight:600,fontSize:13}}>Use Out Pass</div>
+                <div style={{fontSize:11,color:"#666"}}>{fitnessPassesLeft} left this week · Streak stays intact, no points</div>
+              </div>
+              <Toggle on={form.usePass} onChange={v=>set("usePass",v)}/>
+            </div>
           </div>
+        )}
+
+        {!form.usePass&&<>
+          <div style={css.label}>Did you complete the activity?</div>
+          <div style={{display:"flex",gap:8,marginBottom:8}}>
+            <button style={{...css.btn(form.completed?"primary":"secondary"),flex:1}} onClick={()=>set("completed",true)}>✅ Yes!</button>
+            <button style={{...css.btn(!form.completed?"primary":"secondary"),flex:1}} onClick={()=>set("completed",false)}>❌ Missed</button>
+          </div>
+          {form.completed&&<>
+            <div style={css.label}>Duration (min) <span style={{color:"#555",fontWeight:400}}>(optional)</span></div>
+            <input type="number" value={form.duration} onChange={e=>set("duration",e.target.value)} style={css.input} placeholder="e.g. 45"/>
+            {["Running","Cycling"].includes(challenge.type)&&<>
+              <div style={css.label}>Distance (km)</div>
+              <input type="number" value={form.distance} onChange={e=>set("distance",e.target.value)} style={css.input} placeholder="e.g. 5.2"/>
+            </>}
+            <div style={css.label}>Steps <span style={{color:"#555",fontWeight:400}}>{challenge.type!=="Steps"?"(optional)":""}</span></div>
+            <input type="number" value={form.steps} onChange={e=>set("steps",e.target.value)} style={css.input} placeholder={challenge.type==="Steps"?"e.g. 11000":"optional"}/>
+            <div style={css.label}>Note (optional)</div>
+            <input value={form.note} onChange={e=>set("note",e.target.value)} style={css.input} placeholder="How did it feel?"/>
+            <div style={{background:"#1a1630",border:"1px solid #8b7cf8",borderRadius:12,padding:14,textAlign:"center",margin:"14px 0"}}>
+              <div style={{fontSize:11,color:"#888"}}>Points you'll earn</div>
+              <div style={{fontSize:36,fontWeight:900,color:"#8b7cf8"}}>+{pts}</div>
+              {streakBonus>0&&selDate===TODAY&&<div style={{fontSize:12,color:"#ffb347",marginTop:4}}>🔥 Includes +{streakBonus} streak bonus!</div>}
+            </div>
+          </>}
         </>}
+        {form.usePass&&<div style={{background:"#1a1a10",border:"1px solid #ffb347",borderRadius:12,padding:14,textAlign:"center",margin:"14px 0"}}>
+          <div style={{fontSize:24}}>🎫</div>
+          <div style={{fontWeight:700,color:"#ffb347",marginTop:4}}>Out pass applied</div>
+          <div style={{fontSize:12,color:"#666",marginTop:4}}>Your streak will be protected. No points earned.</div>
+        </div>}
         <button style={{...css.btn("primary"),width:"100%",padding:"13px"}} onClick={()=>onSubmit(form,pts,selDate)}>🚀 Submit for {selDate===TODAY?"Today":selDate}</button>
         <button style={{...css.btn("secondary"),width:"100%",marginTop:8}} onClick={onClose}>Cancel</button>
       </div>
@@ -279,6 +304,7 @@ function CheckInModal({challenge,myCheckins,currentStreak,onClose,onSubmit}){
   );
 }
 
+// ── DIET CHECK-IN MODAL ───────────────────────────────────────────────────────
 function DietCheckinModal({rules,dietStats,recentDays,onClose,onSubmit}){
   const defaultRules=rules||DEFAULT_DIET_RULES;
   const dietStart=new Date(); dietStart.setDate(dietStart.getDate()-29);
@@ -305,20 +331,17 @@ function DietCheckinModal({rules,dietStats,recentDays,onClose,onSubmit}){
           <div style={{textAlign:"center",marginBottom:14}}>
             <div style={{fontSize:32}}>🥗</div>
             <div style={{fontWeight:800,fontSize:18}}>Diet Check-In</div>
-            <div style={{color:"#666",fontSize:12}}>Select a date to log</div>
           </div>
           <MiniCalendar startDate={dietStartStr} endDate={TODAY} checkins={recentDays} selectedDate={selDate} onSelect={setSelDate}/>
           <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12,padding:"8px 12px",background:"#13131f",borderRadius:10,border:"1px solid #2a2a42"}}>
-            <span style={{fontSize:16}}>📅</span>
-            <div style={{flex:1}}>
-              <span style={{fontWeight:700}}>{selDate===TODAY?"Today":selDate}</span>
-              {alreadyLogged&&<span style={{...css.chip("#ffb347"),marginLeft:8,fontSize:10}}>Already logged — will overwrite</span>}
-            </div>
+            <span>📅</span>
+            <span style={{fontWeight:700}}>{selDate===TODAY?"Today":selDate}</span>
+            {alreadyLogged&&<span style={{...css.chip("#ffb347"),marginLeft:8,fontSize:10}}>Will overwrite</span>}
           </div>
           {defaultRules.map(r=>(
             <div key={r.id} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 0",borderBottom:"1px solid #1e1e2e"}}>
               <span style={{fontSize:20,width:28}}>{r.icon}</span>
-              <div style={{flex:1}}><div style={{fontWeight:600,fontSize:13}}>{r.label}</div><div style={{fontSize:11,color:"#666"}}>+{r.points} pt{r.points>1?"s":""}</div></div>
+              <div style={{flex:1}}><div style={{fontWeight:600,fontSize:13}}>{r.label}</div><div style={{fontSize:11,color:"#666"}}>+{r.points} pts</div></div>
               <Toggle on={checks[r.id]} onChange={v=>setChecks(p=>({...p,[r.id]:v}))}/>
             </div>
           ))}
@@ -338,7 +361,7 @@ function DietCheckinModal({rules,dietStats,recentDays,onClose,onSubmit}){
           )}
           <div style={css.label}>Note (optional)</div>
           <input value={note} onChange={e=>setNote(e.target.value)} style={{...css.input,marginBottom:14}} placeholder="How was your diet today?"/>
-          <button style={{...css.btn(isGreat?"green":"primary"),width:"100%",padding:"13px"}} onClick={submit}>Submit for {selDate===TODAY?"Today":selDate} 🥗</button>
+          <button style={{...css.btn(isGreat?"green":"primary"),width:"100%",padding:"13px"}} onClick={submit}>Submit 🥗</button>
           <button style={{...css.btn("secondary"),width:"100%",marginTop:8}} onClick={onClose}>Cancel</button>
         </>:(
           <div style={{textAlign:"center",padding:"20px 0"}}>
@@ -348,6 +371,184 @@ function DietCheckinModal({rules,dietStats,recentDays,onClose,onSubmit}){
             <button style={{...css.btn("primary"),width:"100%",marginTop:16}} onClick={onClose}>Done</button>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ── AWARD BADGE MODAL ─────────────────────────────────────────────────────────
+function AwardBadgeModal({participants,onClose,onAward}){
+  const [selUser,setSelUser]=useState(participants[0]?.userId||"");
+  const [emoji,setEmoji]=useState("🏆");
+  const [name,setName]=useState("");
+  const commonEmojis=["🏆","⭐","🔥","💪","🥇","🎯","👑","💎","🚀","🎉","🌟","🥊","🏅","💯","🦁","👸","💅","💍","✨","🌸","🦋","💃","🌺","🎀","💖","👒","🫅","🪄","🦄","💫","🍑","🧿","🫶"];
+  return(
+    <div style={css.overlay} onMouseDown={onClose}>
+      <div style={css.sheet} onMouseDown={e=>e.stopPropagation()}>
+        <div style={{textAlign:"center",marginBottom:18}}>
+          <div style={{fontSize:28}}>🎖️</div>
+          <div style={{fontWeight:800,fontSize:17}}>Award Custom Badge</div>
+        </div>
+        <div style={css.label}>Select Participant</div>
+        <select value={selUser} onChange={e=>setSelUser(e.target.value)} style={{...css.input,marginBottom:4}}>
+          {participants.map(p=><option key={p.userId} value={p.userId}>{p.userName}</option>)}
+        </select>
+        <div style={css.label}>Choose Emoji</div>
+        <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:8}}>
+          {commonEmojis.map(e=>(
+            <button key={e} onClick={()=>setEmoji(e)} style={{fontSize:22,background:emoji===e?"#8b7cf822":"#1a1a2e",border:`1px solid ${emoji===e?"#8b7cf8":"#2a2a42"}`,borderRadius:8,padding:"6px 10px",cursor:"pointer"}}>
+              {e}
+            </button>
+          ))}
+        </div>
+        <div style={css.label}>Or type any emoji</div>
+        <input value={emoji} onChange={e=>setEmoji(e.target.value)} style={{...css.input,fontSize:24,textAlign:"center"}} maxLength={4}/>
+        <div style={css.label}>Badge Name *</div>
+        <input value={name} onChange={e=>setName(e.target.value)} style={css.input} placeholder="e.g. MVP, Iron Will, Team Player"/>
+        <div style={{background:"#1a1630",border:"1px solid #8b7cf8",borderRadius:12,padding:14,textAlign:"center",margin:"14px 0"}}>
+          <div style={{fontSize:36}}>{emoji}</div>
+          <div style={{fontWeight:700,marginTop:4}}>{name||"Badge Name"}</div>
+          <div style={{fontSize:12,color:"#666",marginTop:2}}>Custom badge</div>
+        </div>
+        <button style={{...css.btn("primary"),width:"100%",marginBottom:8}} onClick={()=>name.trim()&&onAward(selUser,emoji,name.trim())}>
+          Award Badge 🎖️
+        </button>
+        <button style={{...css.btn("secondary"),width:"100%"}} onClick={onClose}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
+// ── MANAGE AWARDS MODAL ──────────────────────────────────────────────────────
+function ManageAwardsModal({participants, challengeId, me, onClose}){
+  const [selUser, setSelUser] = useState(participants[0]?.userId||"");
+  const [saving, setSaving] = useState(false);
+
+  const selPart = participants.find(p=>p.userId===selUser);
+  const headstartLog = selPart?.headstartLog||[];
+  const customBadges = selPart?.customBadges||[];
+  const totalHeadstart = headstartLog.reduce((s,h)=>s+h.pts,0);
+
+  async function removeHeadstart(idx){
+    if(!window.confirm("Remove this headstart entry?")) return;
+    setSaving(true);
+    const pRef = doc(db,"challenges",challengeId,"participants",selUser);
+    const newLog = headstartLog.filter((_,i)=>i!==idx);
+    const removedPts = headstartLog[idx].pts;
+    const pSnap = await getDoc(pRef);
+    if(pSnap.exists()){
+      await updateDoc(pRef,{
+        headstartLog: newLog,
+        points: Math.max(0,(pSnap.data().points||0)-removedPts)
+      });
+    }
+    setSaving(false);
+  }
+
+  async function removeBadge(idx){
+    if(!window.confirm("Remove this badge?")) return;
+    setSaving(true);
+    const pRef = doc(db,"challenges",challengeId,"participants",selUser);
+    const newBadges = customBadges.filter((_,i)=>i!==idx);
+    await updateDoc(pRef,{customBadges: newBadges});
+    setSaving(false);
+  }
+
+  return(
+    <div style={css.overlay} onMouseDown={onClose}>
+      <div style={css.sheet} onMouseDown={e=>e.stopPropagation()}>
+        <div style={{textAlign:"center",marginBottom:16}}>
+          <div style={{fontSize:28}}>⚙️</div>
+          <div style={{fontWeight:800,fontSize:17}}>Manage Awards</div>
+          <div style={{fontSize:12,color:"#666"}}>Remove headstart points or custom badges</div>
+        </div>
+
+        <div style={css.label}>Select Participant</div>
+        <select value={selUser} onChange={e=>setSelUser(e.target.value)} style={{...css.input,marginBottom:16}}>
+          {participants.map(p=><option key={p.userId} value={p.userId}>{p.userName}</option>)}
+        </select>
+
+        {/* Headstart entries */}
+        <div style={{fontWeight:700,fontSize:13,marginBottom:8}}>
+          ⚡ Headstart Points
+          {totalHeadstart>0&&<span style={{...css.chip("#ffb347"),marginLeft:8}}>{totalHeadstart} pts total</span>}
+        </div>
+        {headstartLog.length===0
+          ?<div style={{color:"#555",fontSize:12,marginBottom:16}}>No headstart points given.</div>
+          :<div style={{marginBottom:16}}>
+            {headstartLog.map((h,i)=>(
+              <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",background:"#1a1a2e",borderRadius:10,marginBottom:6,border:"1px solid #2a2a42"}}>
+                <div style={{flex:1}}>
+                  <div style={{fontWeight:700,color:"#8b7cf8"}}>+{h.pts} pts</div>
+                  {h.reason&&<div style={{fontSize:11,color:"#666"}}>{h.reason}</div>}
+                  <div style={{fontSize:10,color:"#555"}}>{h.givenAt}</div>
+                </div>
+                <button onClick={()=>removeHeadstart(i)} disabled={saving}
+                  style={{...css.btn("secondary",true),color:"#ff6584",border:"1px solid #ff658444",padding:"5px 10px"}}>
+                  {saving?"…":"✕"}
+                </button>
+              </div>
+            ))}
+          </div>
+        }
+
+        {/* Custom badges */}
+        <div style={{fontWeight:700,fontSize:13,marginBottom:8}}>🎖️ Custom Badges</div>
+        {customBadges.length===0
+          ?<div style={{color:"#555",fontSize:12,marginBottom:16}}>No custom badges awarded.</div>
+          :<div style={{marginBottom:16}}>
+            {customBadges.map((b,i)=>(
+              <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",background:"#1a1a2e",borderRadius:10,marginBottom:6,border:"1px solid #ffb34755"}}>
+                <span style={{fontSize:24}}>{b.emoji}</span>
+                <div style={{flex:1}}>
+                  <div style={{fontWeight:700,color:"#ffb347"}}>{b.name}</div>
+                  <div style={{fontSize:10,color:"#555"}}>{b.awardedAt}</div>
+                </div>
+                <button onClick={()=>removeBadge(i)} disabled={saving}
+                  style={{...css.btn("secondary",true),color:"#ff6584",border:"1px solid #ff658444",padding:"5px 10px"}}>
+                  {saving?"…":"✕"}
+                </button>
+              </div>
+            ))}
+          </div>
+        }
+
+        <button style={{...css.btn("secondary"),width:"100%"}} onClick={onClose}>Close</button>
+      </div>
+    </div>
+  );
+}
+function HeadstartModal({participants,onClose,onGive}){
+  const [selUser,setSelUser]=useState(participants[0]?.userId||"");
+  const [pts,setPts]=useState(5);
+  const [reason,setReason]=useState("");
+  return(
+    <div style={css.overlay} onMouseDown={onClose}>
+      <div style={css.sheet} onMouseDown={e=>e.stopPropagation()}>
+        <div style={{textAlign:"center",marginBottom:18}}>
+          <div style={{fontSize:28}}>⚡</div>
+          <div style={{fontWeight:800,fontSize:17}}>Give Headstart Points</div>
+          <div style={{fontSize:12,color:"#666"}}>Award bonus points to a participant</div>
+        </div>
+        <div style={css.label}>Select Participant</div>
+        <select value={selUser} onChange={e=>setSelUser(e.target.value)} style={{...css.input,marginBottom:4}}>
+          {participants.map(p=><option key={p.userId} value={p.userId}>{p.userName} ({p.points} pts)</option>)}
+        </select>
+        <div style={css.label}>Points to Award</div>
+        <div style={{display:"flex",gap:8,marginBottom:6}}>
+          {[3,5,10,15,20].map(v=><button key={v} style={{...css.btn(pts===v?"primary":"secondary",true),flex:1}} onClick={()=>setPts(v)}>{v}</button>)}
+        </div>
+        <input type="number" min={1} value={pts} onChange={e=>setPts(+e.target.value)} style={css.input} placeholder="Custom points"/>
+        <div style={css.label}>Reason (optional)</div>
+        <input value={reason} onChange={e=>setReason(e.target.value)} style={{...css.input,marginBottom:14}} placeholder="e.g. Joining late, special effort…"/>
+        <div style={{background:"#1a1630",border:"1px solid #8b7cf8",borderRadius:12,padding:14,textAlign:"center",marginBottom:14}}>
+          <div style={{fontSize:11,color:"#888"}}>Points to award</div>
+          <div style={{fontSize:36,fontWeight:900,color:"#8b7cf8"}}>+{pts}</div>
+        </div>
+        <button style={{...css.btn("primary"),width:"100%",marginBottom:8}} onClick={()=>pts>0&&onGive(selUser,pts,reason)}>
+          Give Points ⚡
+        </button>
+        <button style={{...css.btn("secondary"),width:"100%"}} onClick={onClose}>Cancel</button>
       </div>
     </div>
   );
@@ -368,6 +569,19 @@ function BadgesTab({myStats,challengeTotalDays}){
           })}
         </div>
       </div>
+      {/* custom badges */}
+      {(myStats?.customBadges||[]).length>0&&<>
+        <div style={{fontWeight:700,marginBottom:8}}>🎖️ Custom Badges</div>
+        <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:14}}>
+          {(myStats?.customBadges||[]).map((b,i)=>(
+            <div key={i} style={{background:"#1a1630",border:"1px solid #ffb347",borderRadius:12,padding:"10px 12px",textAlign:"center",minWidth:72}}>
+              <div style={{fontSize:24}}>{b.emoji}</div>
+              <div style={{fontSize:10,color:"#ffb347",fontWeight:600,marginTop:2}}>{b.name}</div>
+            </div>
+          ))}
+        </div>
+      </>}
+      <div style={{fontWeight:700,marginBottom:8}}>🏅 Fitness Badges</div>
       {FITNESS_BADGES.map(b=>{ const isEarned=earned.includes(b.id); const {cur,max}=b.progress(myStats||{},challengeTotalDays);
         return(
           <div key={b.id} style={{...css.card,padding:14,border:`1px solid ${isEarned?"#8b7cf8":"#1e1e2e"}`,background:isEarned?"#1a1630":"#13131f",opacity:isEarned?1:0.6,marginBottom:8}}>
@@ -401,7 +615,9 @@ function FriendProfile({user,challenges,onClose}){
   const totalPts=Object.values(allStats).reduce((s,p)=>s+(p.points||0),0)+(dietStats?.totalPoints||0);
   const maxStreak=Object.values(allStats).reduce((s,p)=>Math.max(s,p.streak||0),0);
   const theirC=challenges.filter(c=>(c.memberIds||[]).includes(user.id));
-  const allBadgeIds=[...new Set([...Object.values(allStats).flatMap(p=>p.badges||[]),...(dietStats?.badges||[])])];
+  const fitBadgeIds=[...new Set(Object.values(allStats).flatMap(p=>p.badges||[]))];
+  const dietBadgeIds=dietStats?.badges||[];
+  const customBadges=[...new Set(Object.values(allStats).flatMap(p=>p.customBadges||[]))];
   return(
     <div style={css.overlay} onMouseDown={onClose}>
       <div style={{...css.sheet,maxHeight:"88vh",paddingBottom:40}} onMouseDown={e=>e.stopPropagation()}>
@@ -417,10 +633,19 @@ function FriendProfile({user,challenges,onClose}){
             </div>
           ))}
         </div>
-        {allBadgeIds.length>0&&<>
-          <div style={{fontWeight:700,marginBottom:10}}>🏅 Badges</div>
+        {customBadges.length>0&&<>
+          <div style={{fontWeight:700,marginBottom:8}}>🎖️ Custom Badges</div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:14}}>
+            {customBadges.map((b,i)=><div key={i} style={{background:"#1a1630",border:"1px solid #ffb347",borderRadius:10,padding:"8px 10px",textAlign:"center",minWidth:60}}>
+              <div style={{fontSize:20}}>{b.emoji}</div>
+              <div style={{fontSize:9,color:"#ffb347",fontWeight:600,marginTop:2}}>{b.name}</div>
+            </div>)}
+          </div>
+        </>}
+        {(fitBadgeIds.length>0||dietBadgeIds.length>0)&&<>
+          <div style={{fontWeight:700,marginBottom:8}}>🏅 Badges</div>
           <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:16}}>
-            {allBadgeIds.map(bid=>{ const b=[...FITNESS_BADGES,...DIET_BADGES].find(x=>x.id===bid); if(!b) return null;
+            {[...fitBadgeIds,...dietBadgeIds].map(bid=>{ const b=[...FITNESS_BADGES,...DIET_BADGES].find(x=>x.id===bid); if(!b) return null;
               return <div key={bid} style={{background:"#1a1630",border:"1px solid #8b7cf8",borderRadius:10,padding:"8px 10px",textAlign:"center",minWidth:60}}>
                 <div style={{fontSize:20}}>{b.icon}</div>
                 <div style={{fontSize:9,color:"#8b7cf8",fontWeight:600,marginTop:2,lineHeight:1.3}}>{b.name}</div>
@@ -454,15 +679,13 @@ function ProfileTab({uid,meUser,allUsers,challenges,isAdmin}){
   const [removing,setRemoving]=useState(null);
   const others=allUsers.filter(u=>u.id!==uid);
   const filtered=search.trim()?others.filter(u=>u.name.toLowerCase().includes(search.toLowerCase())):others;
-
   async function handleRemoveUser(targetUser){
     if(!window.confirm(`Remove ${targetUser.name} from the app entirely?`)) return;
     setRemoving(targetUser.id);
     try{
       for(const c of challenges){
         if((c.memberIds||[]).includes(targetUser.id)){
-          const newMembers=(c.memberIds||[]).filter(id=>id!==targetUser.id);
-          await updateDoc(doc(db,"challenges",c.id),{memberIds:newMembers});
+          await updateDoc(doc(db,"challenges",c.id),{memberIds:(c.memberIds||[]).filter(id=>id!==targetUser.id)});
           await deleteDoc(doc(db,"challenges",c.id,"participants",targetUser.id));
         }
       }
@@ -473,7 +696,6 @@ function ProfileTab({uid,meUser,allUsers,challenges,isAdmin}){
     } catch(e){ console.error(e); }
     setRemoving(null); setViewing(null);
   }
-
   return(
     <div style={{paddingBottom:20}}>
       {viewing&&<FriendProfile user={viewing} challenges={challenges} onClose={()=>setViewing(null)}/>}
@@ -494,10 +716,7 @@ function ProfileTab({uid,meUser,allUsers,challenges,isAdmin}){
           return <div key={u.id} style={{...css.card,display:"flex",alignItems:"center",gap:12,borderColor:"#2a2a42"}}>
             <div onClick={()=>setViewing(u)} style={{display:"flex",alignItems:"center",gap:12,flex:1,minWidth:0,cursor:"pointer"}}>
               <div style={css.avatar(u.color,42)}>{u.initials}</div>
-              <div style={{flex:1,minWidth:0}}>
-                <div style={{fontWeight:700}}>{u.name}</div>
-                <div style={{fontSize:11,color:"#666"}}>{shared>0?`${shared} shared challenge${shared>1?"s":""}`:"No shared challenges"}</div>
-              </div>
+              <div style={{flex:1,minWidth:0}}><div style={{fontWeight:700}}>{u.name}</div><div style={{fontSize:11,color:"#666"}}>{shared>0?`${shared} shared challenge${shared>1?"s":""}`:"No shared challenges"}</div></div>
               <span style={{color:"#8b7cf8",fontSize:18}}>›</span>
             </div>
             {isAdmin&&<button onClick={()=>handleRemoveUser(u)} disabled={removing===u.id} style={{...css.btn("secondary",true),color:"#ff6584",border:"1px solid #ff658444",padding:"5px 10px",flexShrink:0}}>{removing===u.id?"…":"🗑️"}</button>}
@@ -521,7 +740,6 @@ function DietTab({uid}){
   const tokensLeft=dietStats?.tokensLeft??WEEKLY_CHEAT_TOKENS;
   const avgScore=dietStats?.avgScore||0;
   const totalLogged=Object.keys(recentDays).length;
-
   async function handleDietCheckin(data){
     await setDoc(dietDayRef(uid,data.date),data);
     const prev=dietStats||{dietStreak:0,longestStreak:0,logStreak:0,perfectStreak:0,totalPoints:0,avgScore:0,tokensLeft:WEEKLY_CHEAT_TOKENS,tokensUsed:0,comebacks:0,badges:[],weekStart:getWeekStart()};
@@ -539,9 +757,7 @@ function DietTab({uid}){
     if(data.score>=(data.maxScore||5)*0.8){ setConfetti(true); setTimeout(()=>setConfetti(false),3000); }
     setShowCheckin(false);
   }
-
   const heatCells=Array.from({length:30},(_,i)=>{ const d=new Date(); d.setDate(d.getDate()-29+i); const key=d.toISOString().slice(0,10); const day=recentDays[key]; const s=day?pct(day.score,day.maxScore||5):null; return{key,col:s===null?"#0d0d14":s>=80?"#43d9ad":s>=60?"#8b7cf8":s>=40?"#ffb347":"#ff6584",done:!!day,score:day?.score,max:day?.maxScore}; });
-
   return(
     <div style={{paddingBottom:20}}>
       <Confetti active={confetti}/>
@@ -615,28 +831,40 @@ function DietTab({uid}){
   );
 }
 
-function ChallengeDetail({challengeId,me,meUser,allUsers,isAdmin,onBack}){
+// ── CHALLENGE DETAIL ──────────────────────────────────────────────────────────
+function ChallengeDetail({challengeId,me,meUser,allUsers,isAdmin,onBack,onEdit}){
   const [challenge,setChallenge]=useState(null);
   const [participants,setParticipants]=useState([]);
   const [myCheckins,setMyCheckins]=useState({});
   const [tab,setTab]=useState("leaderboard");
   const [showCheckin,setShowCheckin]=useState(false);
   const [showDeleteConfirm,setShowDeleteConfirm]=useState(false);
+  const [showAwardBadge,setShowAwardBadge]=useState(false);
+  const [showHeadstart,setShowHeadstart]=useState(false);
+  const [showManageAwards,setShowManageAwards]=useState(false);
   const [deleting,setDeleting]=useState(false);
   const [confetti,setConfetti]=useState(false);
   const [newBadges,setNewBadges]=useState([]);
   const [joining,setJoining]=useState(false);
+  const [fitnessPassesLeft,setFitnessPassesLeft]=useState(WEEKLY_FITNESS_PASSES);
 
   useEffect(()=>{ return onSnapshot(doc(db,"challenges",challengeId),snap=>{ if(snap.exists()) setChallenge({id:snap.id,...snap.data()}); }); },[challengeId]);
   useEffect(()=>{ return onSnapshot(participantsCol(challengeId),snap=>{ setParticipants(snap.docs.map(d=>({id:d.id,...d.data()}))); }); },[challengeId]);
   useEffect(()=>{ return onSnapshot(checkinsCol(challengeId,me),snap=>{ const m={}; snap.docs.forEach(d=>{ m[d.id]=d.data(); }); setMyCheckins(m); }); },[challengeId,me]);
+
+  // calculate fitness passes left this week
+  useEffect(()=>{
+    const weekStart=getWeekStart();
+    const passesUsed=Object.entries(myCheckins).filter(([date,v])=>date>=weekStart&&v.usePass).length;
+    setFitnessPassesLeft(Math.max(0,WEEKLY_FITNESS_PASSES-passesUsed));
+  },[myCheckins]);
 
   async function handleJoin(){
     setJoining(true);
     await updateDoc(doc(db,"challenges",challengeId),{memberIds:arrayUnion(me)});
     const pRef=doc(db,"challenges",challengeId,"participants",me);
     const pSnap=await getDoc(pRef);
-    if(!pSnap.exists()) await setDoc(pRef,{userId:me,userName:meUser.name,userInitials:meUser.initials,color:meUser.color,points:0,streak:0,longestStreak:0,completedDays:0,totalKm:0,earlyBird:false,badges:[]});
+    if(!pSnap.exists()) await setDoc(pRef,{userId:me,userName:meUser.name,userInitials:meUser.initials,color:meUser.color,points:0,streak:0,longestStreak:0,completedDays:0,totalKm:0,earlyBird:false,badges:[],customBadges:[],passesUsed:0});
     setJoining(false);
   }
 
@@ -645,17 +873,20 @@ function ChallengeDetail({challengeId,me,meUser,allUsers,isAdmin,onBack}){
     await setDoc(doc(db,"challenges",challengeId,"checkins",me,"days",date),{...form,pts,timestamp:serverTimestamp()});
     const pRef=doc(db,"challenges",challengeId,"participants",me);
     const pSnap=await getDoc(pRef);
-    const prev=pSnap.exists()?pSnap.data():{userId:me,userName:meUser.name,userInitials:meUser.initials,color:meUser.color,points:0,streak:0,longestStreak:0,completedDays:0,totalKm:0,earlyBird:false};
+    const prev=pSnap.exists()?pSnap.data():{userId:me,userName:meUser.name,userInitials:meUser.initials,color:meUser.color,points:0,streak:0,longestStreak:0,completedDays:0,totalKm:0,earlyBird:false,customBadges:[]};
     const allCheckins={...myCheckins,[date]:{...form,pts}};
-    let streak=0,longestStreak=prev.longestStreak||0,completedDays=0,totalKm=0;
-    Object.entries(allCheckins).forEach(([,v])=>{ if(v.completed){ completedDays++; totalKm+=(+v.distance||0); } });
-    const sortedDates=Object.keys(allCheckins).filter(d=>allCheckins[d].completed).sort().reverse();
+    let streak=0,completedDays=0,totalKm=0;
+    // count completed days (pass days don't count as completed but don't break streak)
+    Object.entries(allCheckins).forEach(([,v])=>{ if(v.completed&&!v.usePass){ completedDays++; totalKm+=(+v.distance||0); } });
+    // streak: consecutive days (pass days count as "not broken")
+    const sortedDates=Object.keys(allCheckins).sort().reverse();
     let prevD=null;
     for(const d of sortedDates){
+      const v=allCheckins[d];
       if(prevD===null){ if(d===TODAY){streak=1;prevD=d;}else break; }
       else{ if(daysBetween(d,prevD)===1){streak++;prevD=d;}else break; }
     }
-    longestStreak=Math.max(longestStreak,streak);
+    const longestStreak=Math.max(prev.longestStreak||0,streak);
     const updatedStats={...prev,points:(prev.points||0)+pts,streak,longestStreak,completedDays,totalKm,earlyBird:prev.earlyBird||isEarly};
     const td=challenge?totalDays(challenge):30;
     const before=FITNESS_BADGES.filter(b=>b.check(prev,td)).map(b=>b.id);
@@ -666,10 +897,29 @@ function ChallengeDetail({challengeId,me,meUser,allUsers,isAdmin,onBack}){
     setShowCheckin(false); setConfetti(true); setTimeout(()=>setConfetti(false),3000);
   }
 
+  async function handleAwardBadge(targetUid,emoji,name){
+    const pRef=doc(db,"challenges",challengeId,"participants",targetUid);
+    const pSnap=await getDoc(pRef);
+    if(pSnap.exists()){
+      const existing=pSnap.data().customBadges||[];
+      await updateDoc(pRef,{customBadges:[...existing,{emoji,name,awardedAt:TODAY,awardedBy:me}]});
+    }
+    setShowAwardBadge(false);
+  }
+
+  async function handleHeadstart(targetUid,pts,reason){
+    const pRef=doc(db,"challenges",challengeId,"participants",targetUid);
+    const pSnap=await getDoc(pRef);
+    if(pSnap.exists()){
+      const prev=pSnap.data();
+      await updateDoc(pRef,{points:(prev.points||0)+pts,headstartLog:[...(prev.headstartLog||[]),{pts,reason,givenBy:me,givenAt:TODAY}]});
+    }
+    setShowHeadstart(false);
+  }
+
   async function handleRemoveFromChallenge(targetUid){
     if(!window.confirm("Remove this user from the challenge?")) return;
-    const newMembers=(challenge.memberIds||[]).filter(id=>id!==targetUid);
-    await updateDoc(doc(db,"challenges",challengeId),{memberIds:newMembers});
+    await updateDoc(doc(db,"challenges",challengeId),{memberIds:(challenge.memberIds||[]).filter(id=>id!==targetUid)});
     await deleteDoc(doc(db,"challenges",challengeId,"participants",targetUid));
   }
 
@@ -684,20 +934,24 @@ function ChallengeDetail({challengeId,me,meUser,allUsers,isAdmin,onBack}){
   if(!challenge) return <div style={{padding:40,textAlign:"center",color:"#555"}}>Loading…</div>;
 
   const isMember=(challenge.memberIds||[]).includes(me);
+  const isOrganiser=challenge.createdBy===me||isAdmin;
   const upcoming=isUpcoming(challenge);
+  const canEdit=upcoming&&isOrganiser;
   const checkedToday=!!myCheckins[TODAY];
   const myStats=participants.find(p=>p.userId===me);
   const tr=daysLeft(challenge); const td=totalDays(challenge); const elapsed=td-tr;
   const ranked=[...participants].sort((a,b)=>b.points-a.points);
   const medals=["🥇","🥈","🥉"];
   const TABS=["leaderboard","badges","progress","rules","members"];
-  const loggable=Object.keys(myCheckins).length;
-  const missedCount=Math.max(0,elapsed-loggable);
+  const missedCount=Math.max(0,elapsed-Object.keys(myCheckins).length);
 
   return(
     <div style={{paddingBottom:20}}>
       <Confetti active={confetti}/>
-      {showCheckin&&<CheckInModal challenge={challenge} myCheckins={myCheckins} currentStreak={myStats?.streak||0} onClose={()=>setShowCheckin(false)} onSubmit={handleCheckin}/>}
+      {showCheckin&&<CheckInModal challenge={challenge} myCheckins={myCheckins} currentStreak={myStats?.streak||0} fitnessPassesLeft={fitnessPassesLeft} onClose={()=>setShowCheckin(false)} onSubmit={handleCheckin}/>}
+      {showAwardBadge&&<AwardBadgeModal participants={participants} onClose={()=>setShowAwardBadge(false)} onAward={handleAwardBadge}/>}
+      {showHeadstart&&<HeadstartModal participants={participants} onClose={()=>setShowHeadstart(false)} onGive={handleHeadstart}/>}
+      {showManageAwards&&<ManageAwardsModal participants={participants} challengeId={challengeId} me={me} onClose={()=>setShowManageAwards(false)}/>}
       {newBadges.length>0&&(
         <div style={{position:"fixed",top:64,left:"50%",transform:"translateX(-50%)",zIndex:300,background:"#1a1630",border:"1px solid #8b7cf8",borderRadius:14,padding:"12px 20px",textAlign:"center",minWidth:220}}>
           <div style={{fontSize:11,color:"#888",marginBottom:4}}>Badge Unlocked! 🎉</div>
@@ -719,6 +973,7 @@ function ChallengeDetail({challengeId,me,meUser,allUsers,isAdmin,onBack}){
         </div>
       )}
 
+      {/* Hero */}
       <div style={{background:"linear-gradient(180deg,#1a1630 0%,#0d0d14 100%)",padding:"14px 14px 18px",borderBottom:"1px solid #1e1e2e"}}>
         <button style={{...css.btn("ghost",true),marginBottom:10}} onClick={onBack}>← Back</button>
         <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:10}}>
@@ -731,7 +986,10 @@ function ChallengeDetail({challengeId,me,meUser,allUsers,isAdmin,onBack}){
               {!upcoming&&isActive(challenge)&&<span style={css.chip("#43d9ad")}>🟢 Active</span>}
             </div>
           </div>
-          {challenge?.createdBy===me&&<button style={{...css.btn("secondary",true),color:"#ff6584",border:"1px solid #ff658444"}} onClick={()=>setShowDeleteConfirm(true)}>🗑️</button>}
+          <div style={{display:"flex",gap:6}}>
+            {canEdit&&<button style={{...css.btn("ghost",true),fontSize:11}} onClick={()=>onEdit&&onEdit(challengeId)}>✏️ Edit</button>}
+            {isOrganiser&&<button style={{...css.btn("secondary",true),color:"#ff6584",border:"1px solid #ff658444"}} onClick={()=>setShowDeleteConfirm(true)}>🗑️</button>}
+          </div>
         </div>
         <p style={{color:"#888",fontSize:13,margin:"0 0 12px"}}>{challenge.description}</p>
         <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:12}}>
@@ -742,14 +1000,37 @@ function ChallengeDetail({challengeId,me,meUser,allUsers,isAdmin,onBack}){
           ))}
         </div>
         {!upcoming&&<><div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#666",marginBottom:4}}><span>Progress</span><span>{pct(elapsed,td)}%</span></div><div style={css.bar}><div style={css.barFill(pct(elapsed,td))}/></div></>}
-        {upcoming&&<div style={{fontSize:12,color:"#ffb347",marginTop:4}}>🗓 Starts {challenge.startDate} · Ends {challenge.endDate}</div>}
+        {upcoming&&<div style={{fontSize:12,color:"#ffb347",marginTop:4}}>🗓 {challenge.startDate} → {challenge.endDate}</div>}
       </div>
 
       <div style={{padding:"12px 14px"}}>
+        {/* Organiser tools — always visible to organiser once challenge has participants */}
+        {isOrganiser&&participants.length>0&&(
+          <div style={{marginBottom:12}}>
+            <div style={{display:"flex",gap:8,marginBottom:6}}>
+              <button style={{...css.btn("secondary"),flex:1,fontSize:12}} onClick={()=>setShowHeadstart(true)}>⚡ Headstart</button>
+              <button style={{...css.btn("secondary"),flex:1,fontSize:12}} onClick={()=>setShowAwardBadge(true)}>🎖️ Award Badge</button>
+            </div>
+            <button style={{...css.btn("secondary"),width:"100%",fontSize:12,color:"#ff9848",border:"1px solid #ff984855"}} onClick={()=>setShowManageAwards(true)}>
+              ⚙️ Manage / Remove Awards
+            </button>
+          </div>
+        )}
+
+        {/* Fitness passes */}
+        {isMember&&!upcoming&&(
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12,padding:"8px 12px",background:"#13131f",borderRadius:10,border:"1px solid #1e1e2e"}}>
+            <span style={{fontSize:13,color:"#888"}}>🎫 Out passes:</span>
+            <div style={{display:"flex",gap:5}}>
+              {Array.from({length:WEEKLY_FITNESS_PASSES},(_,i)=><div key={i} style={{width:18,height:18,borderRadius:"50%",background:i<fitnessPassesLeft?"#8b7cf8":"#2a2a42",border:`2px solid ${i<fitnessPassesLeft?"#8b7cf8":"#444"}`}}/>)}
+            </div>
+            <span style={{fontSize:11,color:"#555"}}>this week</span>
+          </div>
+        )}
+
         {!isMember?(
           <div style={{background:"linear-gradient(135deg,#1a2a16,#13131f)",border:"1px solid #43d9ad",borderRadius:14,padding:14,marginBottom:12}}>
             <div style={{fontWeight:700,marginBottom:4}}>🎯 {upcoming?"Join this upcoming challenge!":"Join this challenge!"}</div>
-            <div style={{fontSize:12,color:"#888",marginBottom:10}}>{upcoming?`Starts on ${challenge.startDate}`:"Challenge is already active — join and start logging!"}</div>
             <button style={{...css.btn("green"),width:"100%"}} onClick={handleJoin} disabled={joining}>{joining?"Joining…":"Join Challenge 🚀"}</button>
           </div>
         ):upcoming?(
@@ -760,7 +1041,7 @@ function ChallengeDetail({challengeId,me,meUser,allUsers,isAdmin,onBack}){
         ):!checkedToday?(
           <div style={{background:"linear-gradient(135deg,#1a1630,#13131f)",border:"1px solid #8b7cf8",borderRadius:14,padding:14,marginBottom:12}}>
             <div style={{fontWeight:700,marginBottom:4}}>🎯 Log today's activity</div>
-            {missedCount>0&&<div style={{fontSize:12,color:"#ffb347",marginBottom:6}}>⚠️ You have {missedCount} unlogged day{missedCount>1?"s":""} — use the calendar to log past days.</div>}
+            {missedCount>0&&<div style={{fontSize:12,color:"#ffb347",marginBottom:6}}>⚠️ {missedCount} unlogged day{missedCount>1?"s":""} — use calendar to backfill.</div>}
             <button style={{...css.btn("primary"),width:"100%"}} onClick={()=>setShowCheckin(true)}>Check In Now ⚡</button>
           </div>
         ):(
@@ -770,9 +1051,7 @@ function ChallengeDetail({challengeId,me,meUser,allUsers,isAdmin,onBack}){
               <div style={{flex:1}}><div style={{fontWeight:700,color:"#43d9ad",fontSize:13}}>Checked in today!</div></div>
               <button style={{...css.btn("ghost",true),fontSize:11}} onClick={()=>setShowCheckin(true)}>Edit ✏️</button>
             </div>
-            {elapsed>1&&<button style={{...css.btn("secondary"),width:"100%",fontSize:12}} onClick={()=>setShowCheckin(true)}>
-              📅 Log / edit a previous day
-            </button>}
+            {elapsed>1&&<button style={{...css.btn("secondary"),width:"100%",fontSize:12}} onClick={()=>setShowCheckin(true)}>📅 Log / edit a previous day</button>}
           </div>
         )}
 
@@ -809,7 +1088,10 @@ function ChallengeDetail({challengeId,me,meUser,allUsers,isAdmin,onBack}){
                     <div style={{fontWeight:800,fontSize:15,color:"#43d9ad"}}>{r.completedDays}</div>
                   </div>
                 </div>
-                {(r.badges||[]).length>0&&<div style={{display:"flex",gap:4,marginTop:6}}>{(r.badges||[]).slice(0,5).map(bid=>{ const b=FITNESS_BADGES.find(x=>x.id===bid); return b?<span key={bid} title={b.name} style={{fontSize:14}}>{b.icon}</span>:null; })}</div>}
+                {(r.customBadges||[]).length>0&&<div style={{display:"flex",gap:4,marginTop:6,flexWrap:"wrap"}}>
+                  {(r.customBadges||[]).map((b,i)=><span key={i} title={b.name} style={{fontSize:16}}>{b.emoji}</span>)}
+                </div>}
+                {(r.badges||[]).length>0&&<div style={{display:"flex",gap:3,marginTop:4,flexWrap:"wrap"}}>{(r.badges||[]).slice(0,5).map(bid=>{ const b=FITNESS_BADGES.find(x=>x.id===bid); return b?<span key={bid} title={b.name} style={{fontSize:13}}>{b.icon}</span>:null; })}</div>}
               </div>
             </div>
           ))}
@@ -822,11 +1104,11 @@ function ChallengeDetail({challengeId,me,meUser,allUsers,isAdmin,onBack}){
           <div style={{fontWeight:700,marginBottom:8}}>Your Heatmap</div>
           <div style={css.card}>
             <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
-              {Array.from({length:td},(_,i)=>{ const d=new Date(challenge.startDate); d.setDate(d.getDate()+i); const key=d.toISOString().slice(0,10); const done=!!myCheckins[key]; const isPast=key<=TODAY;
-                return <div key={key} title={key} style={{width:14,height:14,borderRadius:3,background:done?"#8b7cf8":isPast?"#1e1e2e":"#0d0d14",border:`1px solid ${done?"#8b7cf8":"#2a2a42"}`}}/>;
+              {Array.from({length:td},(_,i)=>{ const d=new Date(challenge.startDate); d.setDate(d.getDate()+i); const key=d.toISOString().slice(0,10); const done=!!myCheckins[key]; const isPass=myCheckins[key]?.usePass; const isPast=key<=TODAY;
+                return <div key={key} title={key} style={{width:14,height:14,borderRadius:3,background:isPass?"#ffb34766":done?"#8b7cf8":isPast?"#1e1e2e":"#0d0d14",border:`1px solid ${isPass?"#ffb347":done?"#8b7cf8":"#2a2a42"}`}}/>;
               })}
             </div>
-            <div style={{fontSize:11,color:"#555",marginTop:8}}>🟣 Done &nbsp;⬛ Missed &nbsp;░ Upcoming</div>
+            <div style={{fontSize:11,color:"#555",marginTop:8}}>🟣 Done &nbsp;🟠 Pass &nbsp;⬛ Missed &nbsp;░ Upcoming</div>
           </div>
           <div style={{fontWeight:700,marginBottom:8}}>Group Completion</div>
           {participants.map(p=>(
@@ -851,7 +1133,11 @@ function ChallengeDetail({challengeId,me,meUser,allUsers,isAdmin,onBack}){
           <div key={p.userId} style={css.card}>
             <div style={{display:"flex",alignItems:"center",gap:12}}>
               <div style={css.avatar(p.color||"#8b7cf8",42)}>{p.userInitials||"?"}</div>
-              <div style={{flex:1}}><div style={{fontWeight:700}}>{p.userName}</div>{p.userId===me&&<span style={css.chip()}>You</span>}</div>
+              <div style={{flex:1}}>
+                <div style={{fontWeight:700}}>{p.userName} {p.userId===me&&<span style={css.chip()}>You</span>}</div>
+                {(p.customBadges||[]).length>0&&<div style={{display:"flex",gap:4,marginTop:4,flexWrap:"wrap"}}>{p.customBadges.map((b,i)=><span key={i} title={b.name} style={{fontSize:15}}>{b.emoji}</span>)}</div>}
+                {(p.headstartLog||[]).length>0&&<div style={{fontSize:11,color:"#ffb347",marginTop:2}}>⚡ {p.headstartLog.reduce((s,h)=>s+h.pts,0)} headstart pts</div>}
+              </div>
               <div style={{textAlign:"right"}}><div style={{fontWeight:800,color:"#8b7cf8"}}>{p.points} pts</div><div style={{fontSize:11,color:"#666"}}>🔥{p.streak}</div></div>
               {(isAdmin||challenge?.createdBy===me)&&p.userId!==me&&(
                 <button onClick={()=>handleRemoveFromChallenge(p.userId)} style={{...css.btn("secondary",true),color:"#ff6584",border:"1px solid #ff658444",padding:"5px 10px",flexShrink:0}}>✕</button>
@@ -864,6 +1150,7 @@ function ChallengeDetail({challengeId,me,meUser,allUsers,isAdmin,onBack}){
   );
 }
 
+// ── CREATE CHALLENGE ──────────────────────────────────────────────────────────
 const TEMPLATES=[
   {name:"30-Day Warrior",type:"Gym / Workout",days:30,desc:"30 days of consistent workouts.",rules:[{label:"Workout done",condition:"completed",points:1},{label:"Session > 45 min",condition:"duration_gt_45",points:2}]},
   {name:"10K Steps",type:"Steps",days:21,desc:"Hit 10,000 steps every day.",rules:[{label:"10k+ steps",condition:"steps_gte_10000",points:1},{label:"15k+ steps",condition:"steps_gte_15000",points:1}]},
@@ -871,11 +1158,11 @@ const TEMPLATES=[
   {name:"21-Day Discipline",type:"Custom",days:21,desc:"You define the rules.",rules:[{label:"Completed today",condition:"completed",points:1}]},
 ];
 
-function CreateChallenge({me,meUser,onCreated,onBack}){
+function ChallengeForm({me,meUser,initial,onSave,onBack,saveLabel="🚀 Create Challenge"}){
   const [step,setStep]=useState(0);
   const [saving,setSaving]=useState(false);
-  const [useCustomDates,setUseCustomDates]=useState(false);
-  const [form,setForm]=useState({name:"",type:"Gym / Workout",days:30,startDate:TODAY,endDate:"",desc:"",rules:[{id:"r0",label:"",condition:"completed",points:1}]});
+  const [useCustomDates,setUseCustomDates]=useState(!!initial?.useCustomDates);
+  const [form,setForm]=useState(initial||{name:"",type:"Gym / Workout",days:30,startDate:TODAY,endDate:"",desc:"",rules:[{id:"r0",label:"",condition:"completed",points:1}]});
   const setF=(k,v)=>setForm(p=>({...p,[k]:v}));
   useEffect(()=>{
     if(!useCustomDates){ const end=new Date(form.startDate); end.setDate(end.getDate()+form.days-1); setF("endDate",end.toISOString().slice(0,10)); }
@@ -885,20 +1172,15 @@ function CreateChallenge({me,meUser,onCreated,onBack}){
   function setRule(id,k,v){ setF("rules",form.rules.map(r=>r.id===id?{...r,[k]:v}:r)); }
   function delRule(id){ setF("rules",form.rules.filter(r=>r.id!==id)); }
   const isUpcomingChallenge=form.startDate>TODAY;
-  async function create(){
-    setSaving(true);
-    const c={name:form.name||"New Challenge",type:form.type,emoji:TYPE_ICONS[form.type]||"⚡",startDate:form.startDate,endDate:form.endDate,description:form.desc,memberIds:[me],createdBy:me,status:"active",rules:form.rules.filter(r=>r.label),createdAt:serverTimestamp()};
-    const ref=await addDoc(challengesCol(),c);
-    await setDoc(doc(db,"challenges",ref.id,"participants",me),{userId:me,userName:meUser.name,userInitials:meUser.initials,color:meUser.color,points:0,streak:0,longestStreak:0,completedDays:0,totalKm:0,earlyBird:false,badges:[]});
-    setSaving(false); onCreated(ref.id);
-  }
+  async function save(){ setSaving(true); await onSave(form); setSaving(false); }
   return(
     <div style={{paddingBottom:20}}>
       <button style={{...css.btn("ghost",true),margin:"0 0 12px"}} onClick={onBack}>← Back</button>
-      <div style={{fontWeight:800,fontSize:19,marginBottom:2}}>Create Challenge</div>
+      <div style={{fontWeight:800,fontSize:19,marginBottom:2}}>{saveLabel.includes("Create")?"Create":"Edit"} Challenge</div>
       <div style={{color:"#666",fontSize:12,marginBottom:14}}>Step {step+1} of 3</div>
       <div style={{display:"flex",gap:6,marginBottom:18}}>{["Template","Details","Rules"].map((s,i)=><div key={s} style={{flex:1,height:3,borderRadius:999,background:i<=step?"#8b7cf8":"#1e1e2e"}}/>)}</div>
-      {step===0&&<>
+
+      {step===0&&!initial&&<>
         {TEMPLATES.map(t=><div key={t.name} onClick={()=>applyTpl(t)} style={{...css.card,cursor:"pointer",display:"flex",alignItems:"center",gap:12,borderColor:"#2a2a42"}}>
           <span style={{fontSize:26}}>{TYPE_ICONS[t.type]}</span>
           <div style={{flex:1}}><div style={{fontWeight:700}}>{t.name}</div><div style={{fontSize:12,color:"#666"}}>{t.desc}</div></div>
@@ -906,7 +1188,7 @@ function CreateChallenge({me,meUser,onCreated,onBack}){
         </div>)}
         <button style={{...css.btn("ghost"),width:"100%",marginTop:4}} onClick={()=>setStep(1)}>Start from scratch →</button>
       </>}
-      {step===1&&<>
+      {(step===1||(initial&&step===0))&&<>
         <div style={css.label}>Challenge Name *</div>
         <input value={form.name} onChange={e=>setF("name",e.target.value)} style={css.input} placeholder="e.g. Summer Shred"/>
         <div style={css.label}>Type</div>
@@ -927,17 +1209,16 @@ function CreateChallenge({me,meUser,onCreated,onBack}){
             <div><div style={css.label}>Start Date</div><input type="date" value={form.startDate} onChange={e=>setF("startDate",e.target.value)} style={css.input}/></div>
             <div><div style={css.label}>End Date</div><input type="date" value={form.endDate} min={form.startDate} onChange={e=>setF("endDate",e.target.value)} style={css.input}/></div>
           </div>
-          {form.startDate&&form.endDate&&<div style={{fontSize:12,color:"#666",marginTop:6}}>{daysBetween(form.startDate,form.endDate)+1} days total{form.startDate>TODAY&&<span style={{...css.chip("#ffb347"),marginLeft:8}}>⏳ Upcoming</span>}</div>}
+          {form.startDate&&form.endDate&&<div style={{fontSize:12,color:"#666",marginTop:6}}>{daysBetween(form.startDate,form.endDate)+1} days{form.startDate>TODAY&&<span style={{...css.chip("#ffb347"),marginLeft:8}}>⏳ Upcoming</span>}</div>}
         </>}
-        {isUpcomingChallenge&&<div style={{background:"#1a1a10",border:"1px solid #ffb347",borderRadius:10,padding:"10px 12px",fontSize:12,color:"#ffb347",marginTop:10}}>⏳ This challenge is upcoming. Others can see and join it before it starts.</div>}
         <div style={css.label}>Description</div>
-        <input value={form.desc} onChange={e=>setF("desc",e.target.value)} style={css.input} placeholder="What's this about?"/>
+        <input value={form.desc||form.description||""} onChange={e=>setF("desc",e.target.value)} style={css.input} placeholder="What's this about?"/>
         <div style={{display:"flex",gap:8,marginTop:16}}>
-          <button style={{...css.btn("secondary"),flex:1}} onClick={()=>setStep(0)}>← Back</button>
-          <button style={{...css.btn("primary"),flex:2}} onClick={()=>form.name.trim()&&form.endDate?setStep(2):alert("Please enter a name and end date")}>Next: Rules →</button>
+          {!initial&&<button style={{...css.btn("secondary"),flex:1}} onClick={()=>setStep(0)}>← Back</button>}
+          <button style={{...css.btn("primary"),flex:2}} onClick={()=>form.name.trim()&&form.endDate?setStep(initial?1:2):alert("Please enter a name and end date")}>Next: Rules →</button>
         </div>
       </>}
-      {step===2&&<>
+      {(step===2||(initial&&step===1))&&<>
         <div style={{fontWeight:700,marginBottom:10}}>Scoring rules</div>
         {form.rules.map((r,i)=>(
           <div key={r.id} style={{...css.card,marginBottom:8}}>
@@ -949,6 +1230,7 @@ function CreateChallenge({me,meUser,onCreated,onBack}){
               <select value={r.condition} onChange={e=>setRule(r.id,"condition",e.target.value)} style={{...css.input,flex:2,padding:"8px 10px"}}>
                 <option value="completed">Completed today</option>
                 <option value="duration_gt_45">Duration &gt; 45 min</option>
+                <option value="steps_gte_5000">Steps ≥ 5,000</option>
                 <option value="steps_gte_10000">Steps ≥ 10,000</option>
                 <option value="steps_gte_15000">Steps ≥ 15,000</option>
                 <option value="distance_gt_3">Distance &gt; 3 km</option>
@@ -961,45 +1243,62 @@ function CreateChallenge({me,meUser,onCreated,onBack}){
         ))}
         <button style={{...css.btn("ghost"),width:"100%",marginBottom:14}} onClick={addRule}>+ Add Rule</button>
         <div style={{display:"flex",gap:8}}>
-          <button style={{...css.btn("secondary"),flex:1}} onClick={()=>setStep(1)}>← Back</button>
-          <button style={{...css.btn("primary"),flex:2}} onClick={create} disabled={saving}>{saving?"Saving…":"🚀 Create Challenge"}</button>
+          <button style={{...css.btn("secondary"),flex:1}} onClick={()=>setStep(initial?0:1)}>← Back</button>
+          <button style={{...css.btn("primary"),flex:2}} onClick={save} disabled={saving}>{saving?"Saving…":saveLabel}</button>
         </div>
       </>}
     </div>
   );
 }
 
+function CreateChallenge({me,meUser,onCreated,onBack}){
+  async function handleSave(form){
+    const c={name:form.name,type:form.type,emoji:TYPE_ICONS[form.type]||"⚡",startDate:form.startDate,endDate:form.endDate,description:form.desc||form.description||"",memberIds:[me],createdBy:me,status:"active",rules:form.rules.filter(r=>r.label),createdAt:serverTimestamp()};
+    const ref=await addDoc(challengesCol(),c);
+    await setDoc(doc(db,"challenges",ref.id,"participants",me),{userId:me,userName:meUser.name,userInitials:meUser.initials,color:meUser.color,points:0,streak:0,longestStreak:0,completedDays:0,totalKm:0,earlyBird:false,badges:[],customBadges:[],passesUsed:0});
+    onCreated(ref.id);
+  }
+  return <ChallengeForm me={me} meUser={meUser} onSave={handleSave} onBack={onBack} saveLabel="🚀 Create Challenge"/>;
+}
+
+function EditChallenge({challenge,me,meUser,onSaved,onBack}){
+  const initial={name:challenge.name,type:challenge.type,days:totalDays(challenge),startDate:challenge.startDate,endDate:challenge.endDate,desc:challenge.description||"",rules:challenge.rules||[],useCustomDates:true};
+  async function handleSave(form){
+    await updateDoc(doc(db,"challenges",challenge.id),{name:form.name,type:form.type,emoji:TYPE_ICONS[form.type]||"⚡",startDate:form.startDate,endDate:form.endDate,description:form.desc||form.description||"",rules:form.rules.filter(r=>r.label)});
+    onSaved();
+  }
+  return <ChallengeForm me={me} meUser={meUser} initial={initial} onSave={handleSave} onBack={onBack} saveLabel="💾 Save Changes"/>;
+}
+
 function ChallengesList({challenges,me,onSelect,onCreate}){
-  const mine     = challenges.filter(c=>(c.memberIds||[]).includes(me));
-  const joinable = challenges.filter(c=>!(c.memberIds||[]).includes(me));
-  const active   = mine.filter(c=>isActive(c));
-  const myUpcoming = mine.filter(c=>isUpcoming(c));
-  const joinableActive   = joinable.filter(c=>isActive(c));
-  const joinableUpcoming = joinable.filter(c=>isUpcoming(c));
-  const SectionHeader=({label,color="#888"})=><div style={{fontWeight:700,fontSize:11,color,marginBottom:8,marginTop:16,letterSpacing:1}}>{label}</div>;
-  const ChallengeCard=({c,joined})=>{
-    const tr=daysLeft(c); const td=totalDays(c); const elapsed=td-tr; const upcoming=isUpcoming(c);
-    return(
-      <div onClick={()=>onSelect(c.id)} style={{...css.card,cursor:"pointer",borderColor:joined?"#2a2a42":upcoming?"#43d9ad44":"#8b7cf844"}}>
-        <div style={{display:"flex",alignItems:"flex-start",gap:10,marginBottom:upcoming?0:10}}>
-          <span style={{fontSize:26}}>{c.emoji}</span>
-          <div style={{flex:1}}>
-            <div style={{fontWeight:700,fontSize:14}}>{c.name}</div>
-            <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:4}}>
-              <span style={css.chip()}>{c.type}</span>
-              {upcoming&&<span style={css.chip("#ffb347")}>⏳ Upcoming</span>}
-              {!joined&&<span style={css.chip("#43d9ad")}>Tap to join</span>}
-            </div>
-          </div>
-          <div style={{textAlign:"right",fontSize:11,flexShrink:0}}>
-            {upcoming?<div style={{color:"#ffb347",fontWeight:700}}>in {daysBetween(TODAY,c.startDate)}d</div>:<div style={{color:"#ff9848",fontWeight:700}}>{tr}d left</div>}
-            <div style={{color:"#555",marginTop:2}}>{(c.memberIds||[]).length} members</div>
+  const mine=challenges.filter(c=>(c.memberIds||[]).includes(me));
+  const joinable=challenges.filter(c=>!(c.memberIds||[]).includes(me));
+  const active=mine.filter(c=>isActive(c));
+  const myUpcoming=mine.filter(c=>isUpcoming(c));
+  const joinableActive=joinable.filter(c=>isActive(c));
+  const joinableUpcoming=joinable.filter(c=>isUpcoming(c));
+  const SH=({label,color="#888"})=><div style={{fontWeight:700,fontSize:11,color,marginBottom:8,marginTop:16,letterSpacing:1}}>{label}</div>;
+  const CC=({c,joined})=>{
+    const tr=daysLeft(c); const td=totalDays(c); const elapsed=td-tr; const up=isUpcoming(c);
+    return <div onClick={()=>onSelect(c.id)} style={{...css.card,cursor:"pointer",borderColor:joined?"#2a2a42":up?"#43d9ad44":"#8b7cf844"}}>
+      <div style={{display:"flex",alignItems:"flex-start",gap:10,marginBottom:up?0:10}}>
+        <span style={{fontSize:26}}>{c.emoji}</span>
+        <div style={{flex:1}}>
+          <div style={{fontWeight:700,fontSize:14}}>{c.name}</div>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:4}}>
+            <span style={css.chip()}>{c.type}</span>
+            {up&&<span style={css.chip("#ffb347")}>⏳ Upcoming</span>}
+            {!joined&&<span style={css.chip("#43d9ad")}>Tap to join</span>}
           </div>
         </div>
-        {!upcoming&&<><div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#666",marginBottom:3,marginTop:8}}><span>Progress</span><span>{pct(elapsed,td)}%</span></div><div style={css.bar}><div style={css.barFill(pct(elapsed,td))}/></div></>}
-        <div style={{fontSize:11,color:"#555",marginTop:upcoming?8:6}}>{c.startDate} → {c.endDate}</div>
+        <div style={{textAlign:"right",fontSize:11,flexShrink:0}}>
+          {up?<div style={{color:"#ffb347",fontWeight:700}}>in {daysBetween(TODAY,c.startDate)}d</div>:<div style={{color:"#ff9848",fontWeight:700}}>{tr}d left</div>}
+          <div style={{color:"#555",marginTop:2}}>{(c.memberIds||[]).length} members</div>
+        </div>
       </div>
-    );
+      {!up&&<><div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#666",marginBottom:3,marginTop:8}}><span>Progress</span><span>{pct(elapsed,td)}%</span></div><div style={css.bar}><div style={css.barFill(pct(elapsed,td))}/></div></>}
+      <div style={{fontSize:11,color:"#555",marginTop:up?8:6}}>{c.startDate} → {c.endDate}</div>
+    </div>;
   };
   return(
     <div style={{paddingBottom:20}}>
@@ -1007,10 +1306,10 @@ function ChallengesList({challenges,me,onSelect,onCreate}){
         <div><div style={{fontWeight:800,fontSize:20}}>Challenges</div><div style={{color:"#666",fontSize:12}}>{active.length} active · {myUpcoming.length} upcoming</div></div>
         <button style={css.btn("primary",true)} onClick={onCreate}>+ New</button>
       </div>
-      {active.length>0&&<><SectionHeader label="YOUR ACTIVE" color="#8b7cf8"/>{active.map(c=><ChallengeCard key={c.id} c={c} joined={true}/>)}</>}
-      {myUpcoming.length>0&&<><SectionHeader label="YOUR UPCOMING" color="#ffb347"/>{myUpcoming.map(c=><ChallengeCard key={c.id} c={c} joined={true}/>)}</>}
-      {joinableActive.length>0&&<><SectionHeader label="ACTIVE — JOIN NOW" color="#43d9ad"/>{joinableActive.map(c=><ChallengeCard key={c.id} c={c} joined={false}/>)}</>}
-      {joinableUpcoming.length>0&&<><SectionHeader label="UPCOMING — JOIN BEFORE IT STARTS" color="#43d9ad"/>{joinableUpcoming.map(c=><ChallengeCard key={c.id} c={c} joined={false}/>)}</>}
+      {active.length>0&&<><SH label="YOUR ACTIVE" color="#8b7cf8"/>{active.map(c=><CC key={c.id} c={c} joined={true}/>)}</>}
+      {myUpcoming.length>0&&<><SH label="YOUR UPCOMING" color="#ffb347"/>{myUpcoming.map(c=><CC key={c.id} c={c} joined={true}/>)}</>}
+      {joinableActive.length>0&&<><SH label="ACTIVE — JOIN NOW" color="#43d9ad"/>{joinableActive.map(c=><CC key={c.id} c={c} joined={false}/>)}</>}
+      {joinableUpcoming.length>0&&<><SH label="UPCOMING — JOIN BEFORE IT STARTS" color="#43d9ad"/>{joinableUpcoming.map(c=><CC key={c.id} c={c} joined={false}/>)}</>}
       {challenges.length===0&&<div style={{...css.card,textAlign:"center",color:"#555",padding:32}}>No challenges yet.<br/>Tap <b style={{color:"#8b7cf8"}}>+ New</b> to create one!</div>}
     </div>
   );
@@ -1029,6 +1328,7 @@ function HomeTab({uid,meUser,challenges,mineChallenges,onGoChallenge,onCreateCha
   const totalPts=fitnessPts+dietPts;
   const maxStreak=Object.values(myAllStats).reduce((s,p)=>Math.max(s,p.streak||0),0);
   const allBadgeIds=[...new Set([...Object.values(myAllStats).flatMap(p=>p.badges||[]),...(dietStats?.badges||[])])];
+  const customBadges=[...new Set(Object.values(myAllStats).flatMap(p=>p.customBadges||[]))];
   const activeChallenges=mineChallenges.filter(c=>isActive(c));
   const upcomingChallenges=mineChallenges.filter(c=>isUpcoming(c));
   return(
@@ -1045,8 +1345,16 @@ function HomeTab({uid,meUser,challenges,mineChallenges,onGoChallenge,onCreateCha
             </div>
           ))}
         </div>
+        {customBadges.length>0&&<>
+          <div style={{fontWeight:700,fontSize:11,color:"#ffb347",marginBottom:6}}>🎖️ CUSTOM BADGES</div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:10}}>
+            {customBadges.map((b,i)=><div key={i} style={{background:"#0d0d14",border:"1px solid #ffb347",borderRadius:10,padding:"5px 9px",display:"flex",alignItems:"center",gap:4}}>
+              <span style={{fontSize:14}}>{b.emoji}</span><span style={{fontSize:9,color:"#ffb347",fontWeight:600}}>{b.name}</span>
+            </div>)}
+          </div>
+        </>}
         {allBadgeIds.length>0&&<>
-          <div style={{fontWeight:700,fontSize:11,color:"#888",marginBottom:8}}>YOUR BADGES</div>
+          <div style={{fontWeight:700,fontSize:11,color:"#888",marginBottom:6}}>YOUR BADGES</div>
           <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
             {allBadgeIds.map(bid=>{ const b=[...FITNESS_BADGES,...DIET_BADGES].find(x=>x.id===bid); if(!b) return null;
               return <div key={bid} style={{background:"#0d0d14",border:"1px solid #8b7cf8",borderRadius:10,padding:"5px 9px",display:"flex",alignItems:"center",gap:4}}>
@@ -1055,7 +1363,7 @@ function HomeTab({uid,meUser,challenges,mineChallenges,onGoChallenge,onCreateCha
             })}
           </div>
         </>}
-        {allBadgeIds.length===0&&<div style={{fontSize:12,color:"#555"}}>No badges yet — start checking in!</div>}
+        {allBadgeIds.length===0&&customBadges.length===0&&<div style={{fontSize:12,color:"#555"}}>No badges yet — start checking in!</div>}
       </div>
       {activeChallenges.length>0&&<>
         <div style={{fontWeight:700,marginBottom:10}}>📅 Active Challenges</div>
@@ -1068,7 +1376,7 @@ function HomeTab({uid,meUser,challenges,mineChallenges,onGoChallenge,onCreateCha
         ))}
       </>}
       {upcomingChallenges.length>0&&<>
-        <div style={{fontWeight:700,marginBottom:10,marginTop:16}}>⏳ Upcoming Challenges</div>
+        <div style={{fontWeight:700,marginBottom:10,marginTop:16}}>⏳ Upcoming</div>
         {upcomingChallenges.map(c=>(
           <div key={c.id} onClick={()=>onGoChallenge(c.id)} style={{...css.card,cursor:"pointer",display:"flex",alignItems:"center",gap:12,borderColor:"#ffb34755"}}>
             <span style={{fontSize:24}}>{c.emoji}</span>
@@ -1097,6 +1405,7 @@ export default function App(){
   const [tab,setTab]=useState("home");
   const [selectedCid,setSelectedCid]=useState(null);
   const [creating,setCreating]=useState(false);
+  const [editing,setEditing]=useState(null);
   const [loading,setLoading]=useState(true);
 
   useEffect(()=>{
@@ -1125,9 +1434,7 @@ export default function App(){
       <div style={{color:"#555",fontSize:12}}>Loading…</div>
     </div>
   );
-
   if(!uid) return <LoginScreen/>;
-
   if(!meUser) return(
     <div style={{minHeight:"100vh",background:"#0d0d14",display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:12}}>
       <div style={{fontSize:40}}>💪</div>
@@ -1136,9 +1443,10 @@ export default function App(){
     </div>
   );
 
-  const isAdmin = meUser?.email === ADMIN_EMAIL;
+  const isAdmin=meUser?.email===ADMIN_EMAIL;
   const NAV=[{id:"home",icon:"🏠",label:"Home"},{id:"challenges",icon:"🏋",label:"Fitness"},{id:"diet",icon:"🥗",label:"Diet"},{id:"profile",icon:"👤",label:"Profile"}];
   const mineChallenges=challenges.filter(c=>(c.memberIds||[]).includes(uid));
+  const editingChallenge=editing?challenges.find(c=>c.id===editing):null;
 
   return(
     <div style={css.app}>
@@ -1154,15 +1462,16 @@ export default function App(){
       <div style={css.scroll}>
         <div style={css.inner}>
           {tab==="home"&&<HomeTab uid={uid} meUser={meUser} challenges={challenges} mineChallenges={mineChallenges} onGoChallenge={id=>{setSelectedCid(id);setTab("challenges");}} onCreateChallenge={()=>{setTab("challenges");setCreating(true);}}/>}
-          {tab==="challenges"&&!selectedCid&&!creating&&<ChallengesList challenges={challenges} me={uid} onSelect={id=>{setSelectedCid(id);setCreating(false);}} onCreate={()=>setCreating(true)}/>}
-          {tab==="challenges"&&creating&&<CreateChallenge me={uid} meUser={meUser} onBack={()=>setCreating(false)} onCreated={id=>{setCreating(false);setSelectedCid(id);}}/>}
-          {tab==="challenges"&&selectedCid&&!creating&&<ChallengeDetail challengeId={selectedCid} me={uid} meUser={meUser} allUsers={allUsers} isAdmin={isAdmin} onBack={()=>setSelectedCid(null)}/>}
+          {tab==="challenges"&&!selectedCid&&!creating&&!editing&&<ChallengesList challenges={challenges} me={uid} onSelect={id=>{setSelectedCid(id);setCreating(false);setEditing(null);}} onCreate={()=>setCreating(true)}/>}
+          {tab==="challenges"&&creating&&!editing&&!selectedCid&&<CreateChallenge me={uid} meUser={meUser} onBack={()=>setCreating(false)} onCreated={id=>{setCreating(false);setSelectedCid(id);}}/>}
+          {tab==="challenges"&&editing&&editingChallenge&&!selectedCid&&<EditChallenge challenge={editingChallenge} me={uid} meUser={meUser} onBack={()=>setEditing(null)} onSaved={()=>{setEditing(null);}}/>}
+          {tab==="challenges"&&selectedCid&&!creating&&!editing&&<ChallengeDetail challengeId={selectedCid} me={uid} meUser={meUser} allUsers={allUsers} isAdmin={isAdmin} onBack={()=>setSelectedCid(null)} onEdit={id=>{setEditing(id);setSelectedCid(null);}}/>}
           {tab==="diet"&&<DietTab uid={uid}/>}
           {tab==="profile"&&<ProfileTab uid={uid} meUser={meUser} allUsers={allUsers} challenges={challenges} isAdmin={isAdmin}/>}
         </div>
       </div>
       <div style={css.tabBar}>
-        {NAV.map(n=><button key={n.id} style={css.tab(tab===n.id)} onClick={()=>{setTab(n.id);setSelectedCid(null);setCreating(false);}}><span style={{fontSize:18}}>{n.icon}</span><span>{n.label}</span></button>)}
+        {NAV.map(n=><button key={n.id} style={css.tab(tab===n.id)} onClick={()=>{setTab(n.id);setSelectedCid(null);setCreating(false);setEditing(null);}}><span style={{fontSize:18}}>{n.icon}</span><span>{n.label}</span></button>)}
       </div>
     </div>
   );
