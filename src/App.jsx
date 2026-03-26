@@ -113,8 +113,8 @@ const css={
   bar:    {height:5,borderRadius:999,background:"#1e1e2e",overflow:"hidden"},
   barFill:(p,c="#8b7cf8")=>({height:"100%",borderRadius:999,width:p+"%",background:`linear-gradient(90deg,${c},${c}99)`,transition:"width .6s"}),
   avatar: (c,s=36)=>({width:s,height:s,borderRadius:"50%",background:c+"33",color:c,border:`2px solid ${c}55`,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:Math.max(9,s*.35),flexShrink:0}),
-  overlay:{position:"fixed",inset:0,background:"rgba(0,0,0,.75)",zIndex:200,display:"flex",alignItems:"flex-end",justifyContent:"center"},
-  sheet:  {background:"#13131f",borderRadius:"18px 18px 0 0",border:"1px solid #2a2a42",padding:22,width:"100%",maxWidth:480,maxHeight:"90vh",overflowY:"auto"},
+  overlay:{position:"fixed",inset:0,background:"rgba(0,0,0,.75)",zIndex:200,display:"flex",alignItems:"flex-end",justifyContent:"center",paddingBottom:56},
+  sheet:  {background:"#13131f",borderRadius:"18px 18px 0 0",border:"1px solid #2a2a42",padding:22,paddingBottom:80,width:"100%",maxWidth:480,maxHeight:"90vh",overflowY:"auto"},
   toggle: on=>({width:44,height:24,borderRadius:999,cursor:"pointer",border:"none",background:on?"#43d9ad":"#2a2a42",position:"relative",transition:"background .2s",flexShrink:0}),
 };
 
@@ -404,7 +404,7 @@ function FriendProfile({user,challenges,onClose}){
   const allBadgeIds=[...new Set([...Object.values(allStats).flatMap(p=>p.badges||[]),...(dietStats?.badges||[])])];
   return(
     <div style={css.overlay} onMouseDown={onClose}>
-      <div style={{...css.sheet,maxHeight:"85vh"}} onMouseDown={e=>e.stopPropagation()}>
+      <div style={{...css.sheet,maxHeight:"88vh",paddingBottom:40}} onMouseDown={e=>e.stopPropagation()}>
         <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:18}}>
           <div style={css.avatar(user.color,54)}>{user.initials}</div>
           <div style={{flex:1}}><div style={{fontWeight:800,fontSize:18}}>{user.name}</div><div style={{fontSize:12,color:"#666"}}>{theirC.length} challenges</div></div>
@@ -764,12 +764,15 @@ function ChallengeDetail({challengeId,me,meUser,allUsers,isAdmin,onBack}){
             <button style={{...css.btn("primary"),width:"100%"}} onClick={()=>setShowCheckin(true)}>Check In Now ⚡</button>
           </div>
         ):(
-          <div style={{display:"flex",gap:8,marginBottom:12}}>
-            <div style={{background:"#0d2416",border:"1px solid #43d9ad",borderRadius:12,padding:12,flex:1,display:"flex",alignItems:"center",gap:10}}>
+          <div style={{marginBottom:12}}>
+            <div style={{background:"#0d2416",border:"1px solid #43d9ad",borderRadius:12,padding:12,display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
               <span style={{fontSize:22}}>✅</span>
-              <div><div style={{fontWeight:700,color:"#43d9ad",fontSize:13}}>Checked in today!</div></div>
+              <div style={{flex:1}}><div style={{fontWeight:700,color:"#43d9ad",fontSize:13}}>Checked in today!</div></div>
+              <button style={{...css.btn("ghost",true),fontSize:11}} onClick={()=>setShowCheckin(true)}>Edit ✏️</button>
             </div>
-            {missedCount>0&&<button style={{...css.btn("orange",true),flexShrink:0}} onClick={()=>setShowCheckin(true)}>Log past {missedCount}d</button>}
+            {elapsed>1&&<button style={{...css.btn("secondary"),width:"100%",fontSize:12}} onClick={()=>setShowCheckin(true)}>
+              📅 Log / edit a previous day
+            </button>}
           </div>
         )}
 
