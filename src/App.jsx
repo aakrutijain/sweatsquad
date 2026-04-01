@@ -3,7 +3,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/fireba
 import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import {
   getFirestore, doc, getDoc, setDoc, updateDoc, addDoc, deleteDoc, getDocs,
-  collection, onSnapshot, serverTimestamp, arrayUnion
+  collection, onSnapshot, serverTimestamp, arrayUnion, runTransaction
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 const ADMIN_EMAIL = "aakrutijain08@gmail.com";
@@ -25,7 +25,8 @@ const checkinsCol     = (cid,uid)=> collection(db,"challenges",cid,"checkins",ui
 const dietDayRef      = (uid,date)=> doc(db,"diet_checkins",uid,"days",date);
 const dietStatsRef    = (uid)=> doc(db,"diet_stats",uid);
 
-const TODAY   = new Date().toISOString().slice(0,10);
+// Always use IST (UTC+5:30) for today's date
+const TODAY = new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Kolkata"}).format(new Date());
 const COLORS  = ["#6C63FF","#FF6584","#43D9AD","#FFB347","#5BC8F5","#f472b6","#34d399","#fb923c"];
 const TYPE_ICONS = {"Running":"🏃","Gym / Workout":"🏋","Steps":"👟","Cycling":"🚴","Yoga":"🧘","Custom":"⚡"};
 const DEFAULT_DIET_RULES = [
@@ -115,8 +116,8 @@ const css={
   bar:    {height:5,borderRadius:999,background:"#1e1e2e",overflow:"hidden"},
   barFill:(p,c="#8b7cf8")=>({height:"100%",borderRadius:999,width:p+"%",background:`linear-gradient(90deg,${c},${c}99)`,transition:"width .6s"}),
   avatar: (c,s=36)=>({width:s,height:s,borderRadius:"50%",background:c+"33",color:c,border:`2px solid ${c}55`,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:Math.max(9,s*.35),flexShrink:0}),
-  overlay:{position:"fixed",inset:0,background:"rgba(0,0,0,.75)",zIndex:200,display:"flex",alignItems:"flex-end",justifyContent:"center",paddingBottom:56},
-  sheet:  {background:"#13131f",borderRadius:"18px 18px 0 0",border:"1px solid #2a2a42",padding:22,paddingBottom:80,width:"100%",maxWidth:480,maxHeight:"85vh",overflowY:"auto",overflowX:"hidden"},
+  overlay:{position:"fixed",inset:0,background:"rgba(0,0,0,.8)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:"60px 12px 70px",overflowY:"auto"},
+  sheet:  {background:"#13131f",borderRadius:18,border:"1px solid #2a2a42",padding:22,paddingBottom:32,width:"100%",maxWidth:480,maxHeight:"100%",overflowY:"auto",overflowX:"hidden",position:"relative"},
   toggle: on=>({width:44,height:24,borderRadius:999,cursor:"pointer",border:"none",background:on?"#43d9ad":"#2a2a42",position:"relative",transition:"background .2s",flexShrink:0}),
 };
 
@@ -178,11 +179,16 @@ function MiniCalendar({startDate,endDate,checkins,selectedDate,onSelect}){
   const firstDay=new Date(viewYear,viewMonth,1);
   const daysInMonth=new Date(viewYear,viewMonth+1,0).getDate();
   const startPad=firstDay.getDay();
-  const challStart=new Date(startDate);
-  const challEnd=new Date(endDate<TODAY?endDate:TODAY);
+  // Use string comparison to avoid timezone issues
+  const challStartStr=startDate;
+  const challEndStr=endDate<TODAY?endDate:TODAY;
   function prevMonth(){ if(viewMonth===0){setViewMonth(11);setViewYear(y=>y-1);}else setViewMonth(m=>m-1); }
   function nextMonth(){ if(viewMonth===11){setViewMonth(0);setViewYear(y=>y+1);}else setViewMonth(m=>m+1); }
   const monthName=new Date(viewYear,viewMonth).toLocaleString("default",{month:"long"});
+  function makeDateStr(y,m,d){
+    // pad to YYYY-MM-DD without timezone shift
+    return `${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+  }
   return(
     <div style={{background:"#1a1a2e",borderRadius:12,padding:12,marginBottom:12}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
@@ -196,9 +202,9 @@ function MiniCalendar({startDate,endDate,checkins,selectedDate,onSelect}){
       <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2}}>
         {Array.from({length:startPad},(_,i)=><div key={"p"+i}/>)}
         {Array.from({length:daysInMonth},(_,i)=>{
-          const d=new Date(viewYear,viewMonth,i+1);
-          const dateStr=d.toISOString().slice(0,10);
-          const loggable=d>=challStart&&d<=challEnd;
+          const dayNum=i+1;
+          const dateStr=makeDateStr(viewYear,viewMonth,dayNum);
+          const loggable=dateStr>=challStartStr&&dateStr<=challEndStr;
           const logged=!!checkins[dateStr];
           const usedPass=checkins[dateStr]?.usePass;
           const selected=dateStr===selectedDate;
@@ -208,8 +214,9 @@ function MiniCalendar({startDate,endDate,checkins,selectedDate,onSelect}){
           else if(logged&&loggable){bg="#8b7cf822";color="#8b7cf8";border="1px solid #8b7cf855";}
           else if(loggable){bg="#1e1e2e";color="#e8e8f0";border="1px solid #2a2a42";}
           return(
-            <div key={i+1} onClick={()=>loggable&&onSelect(dateStr)} style={{textAlign:"center",padding:"6px 2px",borderRadius:8,fontSize:12,fontWeight:selected?700:400,background:bg,color,border,cursor:loggable?"pointer":"default",opacity:loggable?1:0.25,position:"relative"}}>
-              {i+1}
+            <div key={dayNum} onClick={()=>loggable&&onSelect(dateStr)}
+              style={{textAlign:"center",padding:"6px 2px",borderRadius:8,fontSize:12,fontWeight:selected?700:400,background:bg,color,border,cursor:loggable?"pointer":"default",opacity:loggable?1:0.25,position:"relative"}}>
+              {dayNum}
               {logged&&!selected&&<div style={{position:"absolute",bottom:1,left:"50%",transform:"translateX(-50%)",width:4,height:4,borderRadius:"50%",background:usedPass?"#ffb347":"#43d9ad"}}/>}
             </div>
           );
@@ -230,8 +237,9 @@ function CheckInModal({challenge,myCheckins,currentStreak,fitnessPassesLeft,onCl
   const [form,setForm]=useState({completed:true,duration:"",distance:"",steps:"",note:"",usePass:false});
   const set=(k,v)=>setForm(p=>({...p,[k]:v}));
   const alreadyLogged=!!myCheckins[selDate];
-  const pts=calcFitnessPoints(challenge.rules,form,currentStreak,form.usePass);
-  const streakBonus=FITNESS_STREAK_BONUSES[currentStreak+1]||0;
+  const isEdit = alreadyLogged || selDate !== TODAY;
+  const pts=calcFitnessPoints(challenge.rules,form,currentStreak,form.usePass,isEdit);
+  const streakBonus=(!isEdit&&!form.usePass)?FITNESS_STREAK_BONUSES[currentStreak+1]||0:0;
   useEffect(()=>{
     if(myCheckins[selDate]){ const e=myCheckins[selDate]; setForm({completed:e.completed??true,duration:e.duration||"",distance:e.distance||"",steps:e.steps||"",note:e.note||"",usePass:e.usePass||false}); }
     else setForm({completed:true,duration:"",distance:"",steps:"",note:"",usePass:false});
@@ -868,32 +876,73 @@ function ChallengeDetail({challengeId,me,meUser,allUsers,isAdmin,onBack,onEdit})
     setJoining(false);
   }
 
-  async function handleCheckin(form,pts,date){
-    const isEarly=date===TODAY&&new Date().getHours()<9;
-    await setDoc(doc(db,"challenges",challengeId,"checkins",me,"days",date),{...form,pts,timestamp:serverTimestamp()});
-    const pRef=doc(db,"challenges",challengeId,"participants",me);
-    const pSnap=await getDoc(pRef);
-    const prev=pSnap.exists()?pSnap.data():{userId:me,userName:meUser.name,userInitials:meUser.initials,color:meUser.color,points:0,streak:0,longestStreak:0,completedDays:0,totalKm:0,earlyBird:false,customBadges:[]};
-    const allCheckins={...myCheckins,[date]:{...form,pts}};
-    let streak=0,completedDays=0,totalKm=0;
-    // count completed days (pass days don't count as completed but don't break streak)
-    Object.entries(allCheckins).forEach(([,v])=>{ if(v.completed&&!v.usePass){ completedDays++; totalKm+=(+v.distance||0); } });
-    // streak: consecutive days (pass days count as "not broken")
-    const sortedDates=Object.keys(allCheckins).sort().reverse();
-    let prevD=null;
-    for(const d of sortedDates){
-      const v=allCheckins[d];
-      if(prevD===null){ if(d===TODAY){streak=1;prevD=d;}else break; }
-      else{ if(daysBetween(d,prevD)===1){streak++;prevD=d;}else break; }
+  async function handleCheckin(form, _pts, date){
+    console.log("=== CHECKIN START ===", date);
+    const isEarly = date===TODAY && new Date().getHours()<9;
+
+    // Compute pts for this day — no streak bonus to avoid double counting
+    const dayPts = calcFitnessPoints(challenge.rules, form, 0, form.usePass, true);
+    console.log("dayPts for", date, ":", dayPts);
+
+    // Write this day's checkin
+    await setDoc(
+      doc(db,"challenges",challengeId,"checkins",me,"days",date),
+      {...form, pts:dayPts, timestamp:serverTimestamp()}
+    );
+
+    // Read ALL checkin docs fresh from Firestore
+    const allSnap = await getDocs(collection(db,"challenges",challengeId,"checkins",me,"days"));
+    const allDays = {};
+    allSnap.docs.forEach(d=>{ allDays[d.id] = d.data(); });
+    allDays[date] = {...form, pts:dayPts}; // ensure just-written entry is included
+
+    // Recompute EVERY day's pts from raw form fields — never trust stored pts
+    let totalPts=0, completedDays=0, totalKm=0, streak=0;
+    Object.entries(allDays).forEach(([,v])=>{
+      if(v.usePass || !v.completed) return;
+      const p = calcFitnessPoints(challenge.rules, v, 0, false, true);
+      totalPts += p;
+      completedDays++;
+      totalKm += (+v.distance||0);
+    });
+    console.log("All days:", Object.keys(allDays));
+    console.log("totalPts from all days:", totalPts);
+
+    // Streak
+    const doneDays = Object.keys(allDays)
+      .filter(d=>allDays[d].completed && !allDays[d].usePass)
+      .sort().reverse();
+    let prev2=null;
+    for(const d of doneDays){
+      if(!prev2){ if(d===TODAY){streak=1;prev2=d;}else break; }
+      else if(daysBetween(d,prev2)===1){streak++;prev2=d;}
+      else break;
     }
-    const longestStreak=Math.max(prev.longestStreak||0,streak);
-    const updatedStats={...prev,points:(prev.points||0)+pts,streak,longestStreak,completedDays,totalKm,earlyBird:prev.earlyBird||isEarly};
-    const td=challenge?totalDays(challenge):30;
-    const before=FITNESS_BADGES.filter(b=>b.check(prev,td)).map(b=>b.id);
-    const after=FITNESS_BADGES.filter(b=>b.check(updatedStats,td)).map(b=>b.id);
-    const justEarned=after.filter(b=>!before.includes(b));
+
+    const pRef = doc(db,"challenges",challengeId,"participants",me);
+    const pSnap = await getDoc(pRef);
+    const prev = pSnap.exists() ? pSnap.data() : {
+      userId:me, userName:meUser.name, userInitials:meUser.initials,
+      color:meUser.color, points:0, streak:0, longestStreak:0,
+      completedDays:0, totalKm:0, earlyBird:false, customBadges:[]
+    };
+    console.log("prev.points in Firestore:", prev.points);
+
+    const headstartPts = (prev.headstartLog||[]).reduce((s,h)=>s+h.pts,0);
+    const finalPoints = totalPts + headstartPts; // ALWAYS overwrite, never +=
+    console.log("finalPoints to write:", finalPoints);
+
+    const longestStreak = Math.max(prev.longestStreak||0, streak);
+    const updated = {
+      ...prev, points:finalPoints, streak, longestStreak,
+      completedDays, totalKm, earlyBird:prev.earlyBird||(date===TODAY&&isEarly)
+    };
+    const td = challenge ? totalDays(challenge) : 30;
+    const before = FITNESS_BADGES.filter(b=>b.check(prev,td)).map(b=>b.id);
+    const after  = FITNESS_BADGES.filter(b=>b.check(updated,td)).map(b=>b.id);
+    const justEarned = after.filter(b=>!before.includes(b));
     if(justEarned.length) setNewBadges(justEarned);
-    await setDoc(pRef,{...updatedStats,badges:after});
+    await setDoc(pRef, {...updated, badges:after});
     setShowCheckin(false); setConfetti(true); setTimeout(()=>setConfetti(false),3000);
   }
 
