@@ -908,13 +908,17 @@ function ChallengeDetail({challengeId,me,meUser,allUsers,isAdmin,onBack,onEdit})
     console.log("All days:", Object.keys(allDays));
     console.log("totalPts from all days:", totalPts);
 
-    // Streak
+    // Streak — consecutive completed days ending on most recent logged date
     const doneDays = Object.keys(allDays)
       .filter(d=>allDays[d].completed && !allDays[d].usePass)
       .sort().reverse();
     let prev2=null;
     for(const d of doneDays){
-      if(!prev2){ if(d===TODAY){streak=1;prev2=d;}else break; }
+      // streak must start from today OR yesterday (allow 1 day grace)
+      if(!prev2){
+        if(d===TODAY || daysBetween(d,TODAY)===1){streak=1;prev2=d;}
+        else break;
+      }
       else if(daysBetween(d,prev2)===1){streak++;prev2=d;}
       else break;
     }
